@@ -338,7 +338,7 @@ def mostrar_reporte_error():
     ace = np.diff(vel, axis=0) / dt
     aceleracion = np.linalg.norm(ace, axis=1)
     
-    print(f"\nRMSE (distancia a los waypoints): {rmse:.5f} m\n")
+    print(f"\nRMSE (distancia a la trayectoria): {rmse:.5f} m\n")
     
     # 3. Generación de Gráficas
     fig2, axs = plt.subplots(2, 1, figsize=(9, 7))

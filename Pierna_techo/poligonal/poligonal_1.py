@@ -394,7 +394,7 @@ def rmse_poligonal_vs_trayectoria(puntos_trayectoria, n_valor, muestras_por_segm
     errores = np.array(errores)
     return np.sqrt(np.mean(errores**2))
 
-RMSE_OBJETIVO = 0.005 
+RMSE_OBJETIVO = 0.005
 N_AUTOMATICO = True     
 
 def encontrar_n_automatico(puntos_trayectoria, rmse_objetivo, n_min=2, n_max=None):

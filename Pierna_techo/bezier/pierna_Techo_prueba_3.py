@@ -365,7 +365,7 @@ def mostrar_reporte_error():
     errores = np.array(errores)
     rmse = np.sqrt(np.mean(errores**2))
     
-    print(f"\nRMSE (distancia a los waypoints): {rmse:.5f} m\n")
+    print(f"\nRMSE (distancia a la trayectoria): {rmse:.5f} m\n")
     fig2,axs=plt.subplots(2,1,figsize=(9,7))
     axs[0].plot(errores,'o-',color='crimson',markersize=3)
     axs[0].axhline(estado['tolerancia'], color='gray', linestyle='--',
