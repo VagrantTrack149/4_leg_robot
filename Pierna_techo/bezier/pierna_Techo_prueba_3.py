@@ -14,10 +14,10 @@ Q1_MIN, Q1_MAX= 0.0, np.pi
 Q2_MIN, Q2_MAX= -np.pi/2, np.pi/2
 Q3_MIN, Q3_MAX= -np.pi, 0.0
 trayectoria= []
-"""
 
+"""
 # Trayectoria espiral conica hacia abajo
-def generar_espiral_conica(centro=(0,0,-0.20), R0=0.06, Rf=0.03, vueltas=3, n_puntos=60, z_inicial=-0.30, z_final=-0.45):
+def generar_espiral_conica(centro=(0,0,-0.20), R0=0.06, Rf=0.03, vueltas=3, n_puntos=15, z_inicial=-0.30, z_final=-0.45):
     puntos=[]
     for i in range(n_puntos):
         t = i / (n_puntos-1)
@@ -30,7 +30,7 @@ def generar_espiral_conica(centro=(0,0,-0.20), R0=0.06, Rf=0.03, vueltas=3, n_pu
     return puntos
 
 trayectoria = generar_espiral_conica()
-"""
+
 
 radio= 0.05
 
@@ -51,7 +51,7 @@ for t in np.linspace(0, 2*np.pi, num_puntos, endpoint=True):
 
 trayectoria.append(np.array([0.0,0,-0.3]))
 trayectoria.append(np.array([-0.35,0,-0.25]))
-"""
+
 
 
 # volumen escalon
@@ -171,13 +171,13 @@ def segmento_bezier_valido(p0, p1, p2, p3, lado, muestras=20):
     return True
 
 def distancia_punto_segmento(P, A, B):
-    AB= B - A
-    AP= P - A
-    largo2= np.dot(AB, AB)
+    AB = B - A
+    AP = P - A
+    largo2 = np.dot(AB, AB)
     if largo2 < 1e-12:
         return np.linalg.norm(P - A)
-    t= np.clip(np.dot(AP, AB) / largo2, 0.0, 1.0)
-    proyeccion= A + t * AB
+    t = np.clip(np.dot(AP, AB) / largo2, 0.0, 1.0)
+    proyeccion = A + t * AB
     return np.linalg.norm(P - proyeccion)
 
 # Preparar segmento
@@ -314,14 +314,20 @@ def distancia_a_ruta_planeada(P, segmentos_bezier, muestras_por_segmento=60):
     return mejor
 
 def mostrar_reporte_error():
-    if len(registro['historial'])==0: return
-    errores=[
-        distancia_a_ruta_planeada(P, registro['segmentos_reales'])
-        for P in registro['historial']
-    ]
-    errores=np.array(errores)
-    rmse=np.sqrt(np.mean(errores**2))
-    print(f"\nRMSE (distancia perpendicular): {rmse:.5f} m\n")
+    if len(registro['historial']) == 0: return
+    hist_world = np.array([CADERA_FR + p for p in registro['historial']])
+    
+    tray_world = np.array([CADERA_FR + p for p in trayectoria])
+    
+    errores = []
+    for P in hist_world:
+        distancia_al_wp_mas_cercano = np.min([np.linalg.norm(P - wp) for wp in tray_world])
+        errores.append(distancia_al_wp_mas_cercano)
+        
+    errores = np.array(errores)
+    rmse = np.sqrt(np.mean(errores**2))
+    
+    print(f"\nRMSE (distancia a los waypoints): {rmse:.5f} m\n")
     fig2,axs=plt.subplots(2,1,figsize=(9,7))
     axs[0].plot(errores,'o-',color='crimson',markersize=3)
     axs[0].axhline(estado['tolerancia'], color='gray', linestyle='--',
