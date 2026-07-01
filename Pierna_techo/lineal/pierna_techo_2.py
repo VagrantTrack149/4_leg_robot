@@ -141,6 +141,20 @@ def puntos_pata():
 
     return [CADERA_FR + p for p in pts_locales]
 
+def reorganizar_trayectoria(puntos, pos_inicial):
+    if len(puntos) == 0:
+        return puntos
+    puntos_arr = np.array([np.array(p) for p in puntos])
+    
+    inicio = puntos_arr[0]
+    fin = puntos_arr[-1]
+    dist_inicio = np.linalg.norm(inicio - pos_inicial)
+    dist_fin = np.linalg.norm(fin - pos_inicial)
+    
+    if dist_fin < dist_inicio:
+        puntos_arr = puntos_arr[::-1]
+        
+    return [p for p in puntos_arr]
 
 
 # Figura
@@ -239,7 +253,7 @@ def iniciar_trayectoria():
 
     if len(trayectoria) == 0:
         return
-
+    trayectoria_ordenada = reorganizar_trayectoria(trayectoria, estado['actual'])
     # Reiniciar registro para una corrida limpia
     registro['historial_actual'].clear()
     registro['historial_objetivo'].clear()
@@ -247,12 +261,12 @@ def iniciar_trayectoria():
     registro['indices_alcanzados'].clear()
     registro['fuera_de_alcance'].clear()
 
-    estado['trayectoria'] = trayectoria
+    estado['trayectoria'] = trayectoria_ordenada
     estado['indice_actual'] = 0
     estado['siguiendo_trayectoria'] = True
     estado['ruta_terminada'] = False
 
-    estado['objetivo'] = trayectoria[0]
+    estado['objetivo'] = estado['trayectoria'][0]
 
     actualizar_marcador_objetivo()
 
