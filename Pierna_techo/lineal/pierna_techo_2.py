@@ -19,26 +19,44 @@ CADERA_FR = np.array([-0.29785, -0.055, 0.0])
 LADO_FR = -1
 
 
+trayectoria= []
 
-# Trayectoria planeada
+"""
+# Trayectoria espiral conica hacia abajo
+def generar_espiral_conica(centro=(0,0,-0.20), R0=0.06, Rf=0.03, vueltas=3, n_puntos=15, z_inicial=-0.30, z_final=-0.45):
+    puntos=[]
+    for i in range(n_puntos):
+        t = i / (n_puntos-1)
+        radio = R0 - (R0-Rf)*t
+        angulo = 2*np.pi * vueltas * t
+        x = centro[0] + radio*np.cos(angulo)
+        y = centro[1] + radio*np.sin(angulo)
+        z = z_inicial + (z_final-z_inicial)*t
+        puntos.append(np.array([x,y,z]))
+    return puntos
 
-trayectoria = []
+trayectoria = generar_espiral_conica()
 
-radio = 0.05
 
-centro_x = 0.0
-centro_y = 0.0
-centro_z = -0.27
+radio= 0.05
 
-num_puntos = 50
+centro_x= 0.0
+centro_y= 0.0
+centro_z= -0.27
 
-for t in np.linspace(0, 2*np.pi, num_puntos, endpoint=False):
+num_puntos= 30
 
-    x = centro_x + radio*np.cos(2*t)
-    y = centro_y + radio*np.sin(3*t)
-    z = centro_z + radio*np.sin(5*t)
+for t in np.linspace(0, 2*np.pi, num_puntos, endpoint=True):
+
+    x= centro_x + radio*np.cos(2*t)
+    y= centro_y + radio*np.sin(3*t)
+    z= centro_z + radio*np.sin(5*t)
 
     trayectoria.append(np.array([x, y, z]))
+"""
+
+trayectoria.append(np.array([0.0,0,-0.3]))
+trayectoria.append(np.array([-0.35,0,-0.25]))
 
 
 
@@ -249,59 +267,64 @@ boton.on_clicked(lambda event: iniciar_trayectoria())
 
 
 # Reporte final de error
-
 def mostrar_reporte_error():
-
-    planeados = np.array([trayectoria[i] for i in registro['indices_alcanzados']])
-    alcanzados = np.array(registro['puntos_alcanzados'])
-
-    if len(planeados) == 0:
-        print("No hay datos suficientes para calcular error (no se alcanzó ningún punto).")
-        return
-
-    errores_vec = alcanzados - planeados                  # (N, 3)
-    errores_norma = np.linalg.norm(errores_vec, axis=1)    # (N,)
-
-    n_fuera = sum(registro['fuera_de_alcance'])
-
-    print("Error de trayectoria")
-    print(f"Puntos totales: {len(trayectoria)}")
-    print(f"Puntos alcanzados: {len(planeados)}")
-    print(f"Puntos fuera de alcance: {n_fuera}  ")
-    print(f"Error promedio: {errores_norma.mean():.5f} m")
-    print(f"Error max: {errores_norma.max():.5f} m  (punto #{int(np.argmax(errores_norma))})")
-    print(f"Error min: {errores_norma.min():.5f} m")
-
-    print("Error promedio por eje (x, y, z):")
-    print(f"  x: {errores_vec[:,0].mean():+.5f} m   (desv. std: {errores_vec[:,0].std():.5f})")
-    print(f"  y: {errores_vec[:,1].mean():+.5f} m   (desv. std: {errores_vec[:,1].std():.5f})")
-    print(f"  z: {errores_vec[:,2].mean():+.5f} m   (desv. std: {errores_vec[:,2].std():.5f})")
-    #  Gráfica de error por punto 
-    fig2, (ax_err, ax_comp) = plt.subplots(2, 1, figsize=(9, 7))
-
-    ax_err.plot(registro['indices_alcanzados'], errores_norma, 'o-', color='crimson')
-    ax_err.axhline(estado['tolerancia'], color='gray', linestyle='--',
+    # 1. Preparación de datos
+    hist_world = np.array([CADERA_FR + p for p in registro['historial_actual']])
+    tray_world = np.array([CADERA_FR + p for p in trayectoria])
+    
+    # Cálculo de errores perpendiculares
+    errores = []
+    for P in hist_world:
+        # Distancia al punto planeado más cercano
+        distancia_al_wp = np.min([np.linalg.norm(P - wp) for wp in tray_world])
+        errores.append(distancia_al_wp)
+        
+    errores = np.array(errores)
+    rmse = np.sqrt(np.mean(errores**2))
+    
+    # 2. Cálculos de cinemática
+    dt = 0.02
+    hist = np.array(registro['historial_actual'])
+    
+    # Velocidad
+    vel = np.diff(hist, axis=0) / dt
+    velocidad = np.linalg.norm(vel, axis=1)
+    
+    # Aceleración
+    ace = np.diff(vel, axis=0) / dt
+    aceleracion = np.linalg.norm(ace, axis=1)
+    
+    print(f"\nRMSE (distancia a los waypoints): {rmse:.5f} m\n")
+    
+    # 3. Generación de Gráficas
+    fig2, axs = plt.subplots(2, 1, figsize=(9, 7))
+    
+    # Gráfica 1: Error vs Tolerancia
+    axs[0].plot(errores, 'o-', color='crimson', markersize=3)
+    axs[0].axhline(estado['tolerancia'], color='gray', linestyle='--', 
                    label=f"tolerancia ({estado['tolerancia']} m)")
-    ax_err.set_xlabel("Índice de punto")
-    ax_err.set_ylabel("Error planeado - real")
-    ax_err.set_title("Error de seguimiento por punto")
-    ax_err.legend()
-    ax_err.grid(alpha=0.3)
-
-    ax_comp.plot(registro['indices_alcanzados'], planeados[:, 0], 'o--', color='dodgerblue', label='x planeado')
-    ax_comp.plot(registro['indices_alcanzados'], alcanzados[:, 0], 'x-', color='crimson', label='x real')
-    ax_comp.plot(registro['indices_alcanzados'], planeados[:, 2], 'o--', color='seagreen', label='z planeado')
-    ax_comp.plot(registro['indices_alcanzados'], alcanzados[:, 2], 'x-', color='darkorange', label='z real')
-    ax_comp.set_xlabel("Índice de punto")
-    ax_comp.set_ylabel("Posición relativa a la cadera")
-    ax_comp.set_title("Comparación: planeado vs  alcanzado (X y Z)")
-    ax_comp.legend(fontsize=8)
-    ax_comp.grid(alpha=0.3)
-
+    axs[0].axhline(rmse, color='dodgerblue', linestyle=':', 
+                   label=f"RMSE ({rmse:.5f} m)")
+    axs[0].set_xlabel("Frame")
+    axs[0].set_ylabel("Error perpendicular")
+    axs[0].set_title("Error de seguimiento")
+    axs[0].legend(fontsize=8)
+    axs[0].grid(alpha=0.3)
+    
+    # Gráfica 2: Velocidad y Aceleración
+    tiempo_v = np.arange(len(velocidad)) * dt
+    tiempo_a = np.arange(len(aceleracion)) * dt
+    
+    axs[1].plot(tiempo_v, velocidad, color='royalblue', label='Velocidad')
+    axs[1].plot(tiempo_a, aceleracion, color='darkorange', label='Aceleración')
+    axs[1].set_xlabel("Tiempo (s)")
+    axs[1].set_ylabel("Magnitud")
+    axs[1].set_title("Velocidad y aceleración de la trayectoria")
+    axs[1].legend()
+    axs[1].grid(alpha=0.3)
+    
     fig2.tight_layout()
     fig2.show()
-
-
 
 # Animación
 
