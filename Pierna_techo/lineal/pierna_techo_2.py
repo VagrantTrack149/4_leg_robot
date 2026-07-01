@@ -21,9 +21,9 @@ LADO_FR = -1
 
 trayectoria= []
 
-"""
+
 # Trayectoria espiral conica hacia abajo
-def generar_espiral_conica(centro=(0,0,-0.20), R0=0.06, Rf=0.03, vueltas=3, n_puntos=15, z_inicial=-0.30, z_final=-0.45):
+def generar_espiral_conica(centro=(0,0,-0.20), R0=0.06, Rf=0.03, vueltas=3, n_puntos=30, z_inicial=-0.30, z_final=-0.45):
     puntos=[]
     for i in range(n_puntos):
         t = i / (n_puntos-1)
@@ -36,7 +36,7 @@ def generar_espiral_conica(centro=(0,0,-0.20), R0=0.06, Rf=0.03, vueltas=3, n_pu
     return puntos
 
 trayectoria = generar_espiral_conica()
-
+"""
 
 radio= 0.05
 
@@ -53,11 +53,41 @@ for t in np.linspace(0, 2*np.pi, num_puntos, endpoint=True):
     z= centro_z + radio*np.sin(5*t)
 
     trayectoria.append(np.array([x, y, z]))
-"""
+
 
 trayectoria.append(np.array([0.0,0,-0.3]))
 trayectoria.append(np.array([-0.35,0,-0.25]))
+"""
 
+def distancia_punto_segmento(P, A, B):
+    AB = B - A
+    AP = P - A
+
+    largo2 = np.dot(AB, AB)
+
+    if largo2 < 1e-12:
+        return np.linalg.norm(P - A)
+
+    t = np.clip(np.dot(AP, AB) / largo2, 0.0, 1.0)
+    proyeccion = A + t * AB
+
+    return np.linalg.norm(P - proyeccion)
+
+
+def distancia_a_polilinea(P, trayectoria):
+    mejor = np.inf
+
+    for i in range(len(trayectoria) - 1):
+        d = distancia_punto_segmento(
+            P,
+            trayectoria[i],
+            trayectoria[i + 1]
+        )
+
+        if d < mejor:
+            mejor = d
+
+    return mejor
 
 
 # Estado del control
@@ -289,9 +319,9 @@ def mostrar_reporte_error():
     # Cálculo de errores perpendiculares
     errores = []
     for P in hist_world:
-        # Distancia al punto planeado más cercano
-        distancia_al_wp = np.min([np.linalg.norm(P - wp) for wp in tray_world])
-        errores.append(distancia_al_wp)
+        errores.append(
+            distancia_a_polilinea(P, tray_world)
+        )
         
     errores = np.array(errores)
     rmse = np.sqrt(np.mean(errores**2))

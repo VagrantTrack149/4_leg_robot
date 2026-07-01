@@ -14,8 +14,10 @@ Q1_MIN, Q1_MAX= 0.0, np.pi
 Q2_MIN, Q2_MAX= -np.pi/2, np.pi/2
 Q3_MIN, Q3_MAX= -np.pi, 0.0
 
-def generar_espiral_conica(centro=(0,0,-0.20), R0=0.06, Rf=0.03, vueltas=3,
-                            n_puntos=30, z_inicial=-0.30, z_final=-0.45):
+trayectoria= []
+
+
+def generar_espiral_conica(centro=(0,0,-0.20), R0=0.06, Rf=0.03, vueltas=3,n_puntos=30, z_inicial=-0.30, z_final=-0.45):
     puntos=[]
     for i in range(n_puntos):
         t = i / (n_puntos-1)
@@ -27,9 +29,31 @@ def generar_espiral_conica(centro=(0,0,-0.20), R0=0.06, Rf=0.03, vueltas=3,
         puntos.append(np.array([x,y,z]))
     return puntos
 
+#trayectoria.append(np.array([0.0,0,-0.3]))
+#trayectoria.append(np.array([-0.35,0,-0.25]))
+
 trayectoria = generar_espiral_conica()
 
-n = 30
+
+"""
+radio= 0.05
+
+centro_x= 0.0
+centro_y= 0.0
+centro_z= -0.27
+
+num_puntos= 30
+
+for t in np.linspace(0, 2*np.pi, num_puntos, endpoint=True):
+
+    x= centro_x + radio*np.cos(2*t)
+    y= centro_y + radio*np.sin(3*t)
+    z= centro_z + radio*np.sin(5*t)
+
+    trayectoria.append(np.array([x, y, z]))
+"""
+
+n = 10  # valor por defecto 
 
 def aproximar_poligonal(puntos, n_valor):
     pts = np.asarray(puntos, dtype=float)
@@ -161,7 +185,6 @@ def segmento_colisiona(A, B, muestras=50):
 
 # SEGMENTOS RECTOS (poligonales) con evasion de colision
 def segmento_recto_colisiona(p0, p3, muestras=40):
-    """Colision con el escalon a lo largo del segmento recto (marco local)."""
     for u in np.linspace(0.0, 1.0, muestras):
         punto_local = p0 + u*(p3-p0)
         if punto_dentro_bloque(CADERA_FR + punto_local):
@@ -169,7 +192,6 @@ def segmento_recto_colisiona(p0, p3, muestras=40):
     return False
 
 def segmento_recto_valido(p0, p3, lado, muestras=20):
-    """Verifica que los angulos articulares sean validos en todo el segmento."""
     for u in np.linspace(0.0, 1.0, muestras):
         punto = p0 + u*(p3-p0)
         ok, _ = punto_alcanzable(punto, lado)
@@ -307,13 +329,13 @@ def mostrar_reporte_error():
 
     errores = []
     for P in hist_world:
-        distancia_al_wp_mas_cercano = np.min([np.linalg.norm(P - wp) for wp in tray_world])
-        errores.append(distancia_al_wp_mas_cercano)
-
+        distancia = _distancia_a_polilinea(P, tray_world)
+        errores.append(distancia)
+ 
     errores = np.array(errores)
     rmse = np.sqrt(np.mean(errores**2))
-
-    print(f"\nRMSE (distancia a los waypoints, n={n}): {rmse:.5f} m\n")
+ 
+    print(f"\nRMSE (distancia a la trayectoria, n={n}): {rmse:.5f} m\n")
     fig2,axs=plt.subplots(2,1,figsize=(9,7))
     axs[0].plot(errores,'o-',color='crimson',markersize=3)
     axs[0].axhline(estado['tolerancia'], color='gray', linestyle='--',
@@ -371,6 +393,28 @@ def rmse_poligonal_vs_trayectoria(puntos_trayectoria, n_valor, muestras_por_segm
 
     errores = np.array(errores)
     return np.sqrt(np.mean(errores**2))
+
+RMSE_OBJETIVO = 0.005 
+N_AUTOMATICO = True     
+
+def encontrar_n_automatico(puntos_trayectoria, rmse_objetivo, n_min=2, n_max=None):
+    if n_max is None:
+        n_max = len(puntos_trayectoria)
+    for n_candidato in range(n_min, n_max + 1):
+        rmse_actual = rmse_poligonal_vs_trayectoria(puntos_trayectoria, n_candidato)
+        if n_max>= 5:    
+            if rmse_actual <= rmse_objetivo and n_candidato > 4:
+                return n_candidato, rmse_actual
+        if n_max < 5:
+            if rmse_actual <= rmse_objetivo:
+                return n_candidato, rmse_actual
+    return n_max, rmse_poligonal_vs_trayectoria(puntos_trayectoria, n_max)
+
+if N_AUTOMATICO:
+    n, rmse_logrado = encontrar_n_automatico(trayectoria, RMSE_OBJETIVO)
+    poligonal = aproximar_poligonal(trayectoria, n)
+    cumplido = "si" if rmse_logrado <= RMSE_OBJETIVO else "no (se llego al maximo n posible)"
+    print(f"n automatico = {n}  (RMSE = {rmse_logrado:.5f} m, objetivo <= {RMSE_OBJETIVO} m, cumplido: {cumplido})")
 
 def graficar_rmse_vs_n(puntos_trayectoria, valores_n, n_usado):
     rmses = [rmse_poligonal_vs_trayectoria(puntos_trayectoria, nv) for nv in valores_n]

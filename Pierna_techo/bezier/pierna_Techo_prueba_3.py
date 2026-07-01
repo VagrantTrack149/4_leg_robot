@@ -30,8 +30,8 @@ def generar_espiral_conica(centro=(0,0,-0.20), R0=0.06, Rf=0.03, vueltas=3, n_pu
     return puntos
 
 trayectoria = generar_espiral_conica()
-
 """
+
 radio= 0.05
 
 centro_x= 0.0
@@ -48,11 +48,22 @@ for t in np.linspace(0, 2*np.pi, num_puntos, endpoint=True):
 
     trayectoria.append(np.array([x, y, z]))
 
-
 trayectoria.append(np.array([0.0,0,-0.3]))
 trayectoria.append(np.array([-0.35,0,-0.25]))
-
 """
+
+
+def distancia_a_polilinea(P, ref):
+    mejor = np.inf
+
+    for i in range(len(ref)-1):
+        d = distancia_punto_segmento(P, ref[i], ref[i+1])
+
+        if d < mejor:
+            mejor = d
+
+    return mejor
+
 
 # volumen escalon
 ESCALON_X_MIN = -0.70
@@ -323,6 +334,21 @@ def distancia_a_ruta_planeada(P, segmentos_bezier, muestras_por_segmento=60):
                 mejor= d
     return mejor
 
+def distancia_a_polilinea(P, trayectoria):
+    mejor = np.inf
+
+    for i in range(len(trayectoria) - 1):
+        d = distancia_punto_segmento(
+            P,
+            trayectoria[i],
+            trayectoria[i + 1]
+        )
+
+        if d < mejor:
+            mejor = d
+
+    return mejor
+
 def mostrar_reporte_error():
     if len(registro['historial']) == 0: return
     hist_world = np.array([CADERA_FR + p for p in registro['historial']])
@@ -330,9 +356,11 @@ def mostrar_reporte_error():
     tray_world = np.array([CADERA_FR + p for p in trayectoria])
     
     errores = []
+
     for P in hist_world:
-        distancia_al_wp_mas_cercano = np.min([np.linalg.norm(P - wp) for wp in tray_world])
-        errores.append(distancia_al_wp_mas_cercano)
+        errores.append(
+            distancia_a_polilinea(P, tray_world)
+        )
         
     errores = np.array(errores)
     rmse = np.sqrt(np.mean(errores**2))
