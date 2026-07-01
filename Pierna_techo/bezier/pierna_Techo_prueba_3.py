@@ -15,9 +15,9 @@ Q2_MIN, Q2_MAX= -np.pi/2, np.pi/2
 Q3_MIN, Q3_MAX= -np.pi, 0.0
 trayectoria= []
 
-"""
+
 # Trayectoria espiral conica hacia abajo
-def generar_espiral_conica(centro=(0,0,-0.20), R0=0.06, Rf=0.03, vueltas=3, n_puntos=15, z_inicial=-0.30, z_final=-0.45):
+def generar_espiral_conica(centro=(0,0,-0.20), R0=0.06, Rf=0.03, vueltas=3, n_puntos=30, z_inicial=-0.30, z_final=-0.45):
     puntos=[]
     for i in range(n_puntos):
         t = i / (n_puntos-1)
@@ -31,7 +31,7 @@ def generar_espiral_conica(centro=(0,0,-0.20), R0=0.06, Rf=0.03, vueltas=3, n_pu
 
 trayectoria = generar_espiral_conica()
 
-
+"""
 radio= 0.05
 
 centro_x= 0.0
@@ -47,12 +47,12 @@ for t in np.linspace(0, 2*np.pi, num_puntos, endpoint=True):
     z= centro_z + radio*np.sin(5*t)
 
     trayectoria.append(np.array([x, y, z]))
-"""
+
 
 trayectoria.append(np.array([0.0,0,-0.3]))
 trayectoria.append(np.array([-0.35,0,-0.25]))
 
-
+"""
 
 # volumen escalon
 ESCALON_X_MIN = -0.70
@@ -235,10 +235,20 @@ def calcular_tangentes(puntos):
 
 # Reorganizar trayectoria desde la posicion actual
 def reorganizar_trayectoria(puntos, pos_inicial):
-    if len(puntos)==0: return puntos
-    distancias=[np.linalg.norm(p-pos_inicial) for p in puntos]
-    idx=distancias.index(min(distancias))
-    return puntos[idx:]+puntos[:idx]
+    if len(puntos) == 0:
+        return puntos
+    
+    puntos_arr = np.array(puntos)
+    inicio = puntos_arr[0]
+    fin = puntos_arr[-1]
+    
+    dist_inicio = np.linalg.norm(inicio - pos_inicial)
+    dist_fin = np.linalg.norm(fin - pos_inicial)
+    
+    if dist_fin < dist_inicio:
+        puntos_arr = puntos_arr[::-1]
+        
+    return [p for p in puntos_arr]
 
 # Preparar trayectoria completa
 def preparar_trayectoria_completa(puntos):
