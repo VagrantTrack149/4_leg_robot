@@ -20,7 +20,7 @@ Q3_MIN, Q3_MAX = -0.45, 1.6     # Elbow
 # La cinemática (cinematica_inversa) usa una convencion diferente:
 #   q1: arccos(...) -> siempre en [0, pi]; q1=pi/2 corresponde a la pierna vertical.
 #   q2: ya coincide de forma directa con la convencion real (sin offset/inversion).
-#   q3: siempre <= 0 (0 = pierna extendida, negativo = flexion).
+#   q3: siempre <= 0 (0 = pierna extendida, negativo = flexion).ax
 # Se asume que el motor real tiene su cero en la pierna vertical (q1) y que el
 # signo de flexion del codo está invertido respecto al interno (q3).
 Q1_OFFSET = np.pi/2   # q1_motor = q1_interno - Q1_OFFSET
