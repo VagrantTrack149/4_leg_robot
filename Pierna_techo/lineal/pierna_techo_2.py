@@ -18,6 +18,11 @@ L3 = 0.2142
 CADERA_FR = np.array([-0.29785, -0.055, 0.0])
 LADO_FR = -1
 
+# Límites reales de los motores (rad)
+Q1_MIN, Q1_MAX = -0.6, 0.5      # Shoulder Abduction
+Q2_MIN, Q2_MAX = -1.7, 1.7      # Shoulder Rotation
+Q3_MIN, Q3_MAX = -0.45, 1.6     # Elbow
+
 
 trayectoria= []
 
@@ -161,6 +166,24 @@ def cinematica_inversa(px, py, pz, lado):
 
     return q1, q2, q3, fuera_de_alcance
 
+
+def angulos_validos(q1, q2, q3):
+    return (
+        Q1_MIN <= q1 <= Q1_MAX and
+        Q2_MIN <= q2 <= Q2_MAX and
+        Q3_MIN <= q3 <= Q3_MAX
+    )
+
+
+def punto_alcanzable(P, lado):
+    """Verifica si un punto es alcanzable geométricamente Y dentro de los
+    límites reales de los motores (minPosition/maxPosition)."""
+    px, py, pz = P
+    q1, q2, q3, fuera_geo = cinematica_inversa(px, py, pz, lado)
+    fuera_rango = not angulos_validos(q1, q2, q3)
+    return (not fuera_geo) and (not fuera_rango), (q1, q2, q3)
+
+
 def puntos_pata():
 
     px, py, pz = estado['actual']
@@ -284,6 +307,19 @@ def iniciar_trayectoria():
     if len(trayectoria) == 0:
         return
     trayectoria_ordenada = reorganizar_trayectoria(trayectoria, estado['actual'])
+
+    # Descartar puntos que violen los límites reales de los motores
+    puntos_validos = [p for p in trayectoria_ordenada if punto_alcanzable(p, LADO_FR)[0]]
+    descartados = len(trayectoria_ordenada) - len(puntos_validos)
+    if descartados > 0:
+        print(f"Aviso: se descartaron {descartados} punto(s) de la trayectoria "
+              f"por estar fuera de los límites articulares reales de los motores.")
+
+    if len(puntos_validos) == 0:
+        print("Ningún punto de la trayectoria es alcanzable dentro de los "
+              "límites articulares. Ruta no iniciada.")
+        return
+
     # Reiniciar registro para una corrida limpia
     registro['historial_actual'].clear()
     registro['historial_objetivo'].clear()
@@ -291,7 +327,7 @@ def iniciar_trayectoria():
     registro['indices_alcanzados'].clear()
     registro['fuera_de_alcance'].clear()
 
-    estado['trayectoria'] = trayectoria_ordenada
+    estado['trayectoria'] = puntos_validos
     estado['indice_actual'] = 0
     estado['siguiendo_trayectoria'] = True
     estado['ruta_terminada'] = False
@@ -389,9 +425,9 @@ def actualizar(frame):
 
         if distancia < estado['tolerancia']:
 
-            # Verificar si este punto estaba fuera de alcance
-            px, py, pz = estado['objetivo']
-            _, _, _, fuera = cinematica_inversa(px, py, pz, LADO_FR)
+            # Verificar si este punto estaba fuera de alcance (geometría o límites de motor)
+            fuera, _ = punto_alcanzable(estado['objetivo'], LADO_FR)
+            fuera = not fuera
 
             # Registrar punto alcanzado
             registro['puntos_alcanzados'].append(estado['actual'].copy())
@@ -414,6 +450,13 @@ def actualizar(frame):
                 actualizar_marcador_objetivo()
 
     O0, O1, O2, O3 = puntos_pata()
+
+    # Alerta visual si la posición actual excede los límites reales de los motores
+    dentro_de_limites, _ = punto_alcanzable(estado['actual'], LADO_FR)
+    color_pierna = 'red' if dentro_de_limites else 'orange'
+    l01.set_color(color_pierna)
+    l12.set_color(color_pierna)
+    l23.set_color(color_pierna)
 
     l01.set_data_3d([O0[0], O1[0]], [O0[1], O1[1]], [O0[2], O1[2]])
     l12.set_data_3d([O1[0], O2[0]], [O1[1], O2[1]], [O1[2], O2[2]])

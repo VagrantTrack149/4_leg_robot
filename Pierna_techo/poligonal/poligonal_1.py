@@ -10,9 +10,10 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 a1=0.0528; L2=0.2142; L3=0.2142
 CADERA_FR=np.array([-0.29785,-0.055,0.0]); LADO_FR=-1
 
-Q1_MIN, Q1_MAX= 0.0, np.pi
-Q2_MIN, Q2_MAX= -np.pi/2, np.pi/2
-Q3_MIN, Q3_MAX= -np.pi, 0.0
+# Límites reales de los motores (rad)
+Q1_MIN, Q1_MAX = -0.6, 0.5      # Shoulder Abduction
+Q2_MIN, Q2_MAX = -1.7, 1.7      # Shoulder Rotation
+Q3_MIN, Q3_MAX = -0.45, 1.6     # Elbow
 
 trayectoria= []
 
