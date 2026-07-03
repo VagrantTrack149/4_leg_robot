@@ -14,11 +14,25 @@ CADERA_FR=np.array([-0.29785,-0.055,0.0]); LADO_FR=-1
 Q1_MIN, Q1_MAX = -0.6, 0.5      # Shoulder Abduction
 Q2_MIN, Q2_MAX = -1.7, 1.7      # Shoulder Rotation
 Q3_MIN, Q3_MAX = -0.45, 1.6     # Elbow
+#### REVISAR SI ES NECESARIO CAMBIAR LA CINEMATICA (ENTERAAAAA AAA)
+############
+#Conversión entre el ángulo INTERNO de la cinemática y el ángulo del motor de webots
+# La cinemática (cinematica_inversa) usa una convencion diferente:
+#   q1: arccos(...) -> siempre en [0, pi]; q1=pi/2 corresponde a la pierna vertical.
+#   q2: ya coincide de forma directa con la convencion real (sin offset/inversion).
+#   q3: siempre <= 0 (0 = pierna extendida, negativo = flexion).
+# Se asume que el motor real tiene su cero en la pierna vertical (q1) y que el
+# signo de flexion del codo está invertido respecto al interno (q3).
+Q1_OFFSET = np.pi/2   # q1_motor = q1_interno - Q1_OFFSET
+Q3_SIGN   = -1.0       # q3_motor = Q3_SIGN * q3_interno
+
+def q_interno_a_motor(q1, q2, q3):
+    return q1 - Q1_OFFSET, q2, Q3_SIGN * q3
+
 trayectoria= []
 
-
 # Trayectoria espiral conica hacia abajo
-def generar_espiral_conica(centro=(0,0,-0.20), R0=0.06, Rf=0.03, vueltas=3, n_puntos=30, z_inicial=-0.30, z_final=-0.45):
+def generar_espiral_conica(centro=(0,0,-0.3820), R0=0.026, Rf=0.0083, vueltas=3, n_puntos=30, z_inicial=-0.360, z_final=-0.425):
     puntos=[]
     for i in range(n_puntos):
         t = i / (n_puntos-1)
@@ -31,13 +45,13 @@ def generar_espiral_conica(centro=(0,0,-0.20), R0=0.06, Rf=0.03, vueltas=3, n_pu
     return puntos
 
 trayectoria = generar_espiral_conica()
-"""
 
+"""
 radio= 0.05
 
 centro_x= 0.0
 centro_y= 0.0
-centro_z= -0.27
+centro_z= -0.3820
 
 num_puntos= 30
 
@@ -48,9 +62,8 @@ for t in np.linspace(0, 2*np.pi, num_puntos, endpoint=True):
     z= centro_z + radio*np.sin(5*t)
 
     trayectoria.append(np.array([x, y, z]))
-
-trayectoria.append(np.array([0.0,0,-0.3]))
-trayectoria.append(np.array([-0.35,0,-0.25]))
+trayectoria.append(np.array([0.0,0,-0.3820]))
+trayectoria.append(np.array([-0.1,0,-0.25]))
 """
 
 
@@ -136,10 +149,11 @@ def cinematica_inversa(px,py,pz,lado):
     return q1,q2,q3,fuera_de_alcance
 
 def angulos_validos(q1,q2,q3):
+    q1m, q2m, q3m = q_interno_a_motor(q1, q2, q3)
     return (
-        Q1_MIN <= q1 <= Q1_MAX and
-        Q2_MIN <= q2 <= Q2_MAX and
-        Q3_MIN <= q3 <= Q3_MAX
+        Q1_MIN <= q1m <= Q1_MAX and
+        Q2_MIN <= q2m <= Q2_MAX and
+        Q3_MIN <= q3m <= Q3_MAX
     )
 
 def punto_alcanzable(P, lado):
@@ -147,6 +161,20 @@ def punto_alcanzable(P, lado):
     q1,q2,q3,fuera_geo= cinematica_inversa(px,py,pz,lado)
     fuera_rango= not angulos_validos(q1,q2,q3)
     return (not fuera_geo) and (not fuera_rango), (q1,q2,q3)
+
+def reporte_alcanzabilidad(puntos, lado):
+    total = len(puntos)
+    alcanzables = 0
+    for i, P in enumerate(puntos):
+        ok, _ = punto_alcanzable(P, lado)
+        if ok:
+            alcanzables += 1
+        else:
+            print(f"  Punto {i} fuera de rango: {P}")
+    print(f"Alcanzabilidad: {alcanzables}/{total} puntos dentro de los límites reales del motor")
+    return alcanzables, total
+
+reporte_alcanzabilidad(trayectoria, LADO_FR)
 
 def punto_dentro_bloque(P):
     return (
@@ -377,12 +405,12 @@ def mostrar_reporte_error():
     axs[0].legend(fontsize=8); axs[0].grid(alpha=0.3)
     hist = np.array(registro['historial'])
 
-    # Paso de tiempo de la simulación
+    # Paso de tiempo de la simulacion
     dt = 0.02
     # Velocidad 
     vel = np.diff(hist, axis=0) / dt
     velocidad = np.linalg.norm(vel, axis=1)
-    # Aceleración 
+    # Aceleracion 
     ace = np.diff(vel, axis=0) / dt
     aceleracion = np.linalg.norm(ace, axis=1)
     tiempo_v = np.arange(len(velocidad)) * dt
@@ -392,7 +420,7 @@ def mostrar_reporte_error():
                 label='Velocidad')
     axs[1].plot(tiempo_a, aceleracion,
                 color='darkorange',
-                label='Aceleración')
+                label='Aceleracion')
 
     axs[1].set_xlabel("Tiempo")
     axs[1].set_ylabel("Magnitud")

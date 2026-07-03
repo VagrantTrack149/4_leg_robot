@@ -15,63 +15,43 @@ Q1_MIN, Q1_MAX = -0.6, 0.5      # Shoulder Abduction
 Q2_MIN, Q2_MAX = -1.7, 1.7      # Shoulder Rotation
 Q3_MIN, Q3_MAX = -0.45, 1.6     # Elbow
 
-trayectoria= []
+# Conversión entre ángulo interno y ángulo del motor de Webots
+Q1_OFFSET = np.pi / 2   # q1_motor = q1_interno - Q1_OFFSET
+Q3_SIGN   = -1.0        # q3_motor = Q3_SIGN * q3_interno
 
+def q_interno_a_motor(q1, q2, q3):
+    return q1 - Q1_OFFSET, q2, Q3_SIGN * q3
 
-def generar_espiral_conica(centro=(0,0,-0.20), R0=0.06, Rf=0.03, vueltas=3,n_puntos=30, z_inicial=-0.30, z_final=-0.45):
-    puntos=[]
+# Trayectoria espiral cónica
+def generar_espiral_conica(centro=(0,0,-0.3820), R0=0.026, Rf=0.0083,
+                           vueltas=3, n_puntos=30,
+                           z_inicial=-0.360, z_final=-0.425):
+    puntos = []
     for i in range(n_puntos):
-        t = i / (n_puntos-1)
-        radio = R0 - (R0-Rf)*t
-        angulo = 2*np.pi * vueltas * t
-        x = centro[0] + radio*np.cos(angulo)
-        y = centro[1] + radio*np.sin(angulo)
-        z = z_inicial + (z_final-z_inicial)*t
-        puntos.append(np.array([x,y,z]))
+        t = i / (n_puntos - 1)
+        radio = R0 - (R0 - Rf) * t
+        angulo = 2 * np.pi * vueltas * t
+        x = centro[0] + radio * np.cos(angulo)
+        y = centro[1] + radio * np.sin(angulo)
+        z = z_inicial + (z_final - z_inicial) * t
+        puntos.append(np.array([x, y, z]))
     return puntos
-
-#trayectoria.append(np.array([0.0,0,-0.3]))
-#trayectoria.append(np.array([-0.35,0,-0.25]))
 
 trayectoria = generar_espiral_conica()
 
-
-"""
-radio= 0.05
-
-centro_x= 0.0
-centro_y= 0.0
-centro_z= -0.27
-
-num_puntos= 30
-
-for t in np.linspace(0, 2*np.pi, num_puntos, endpoint=True):
-
-    x= centro_x + radio*np.cos(2*t)
-    y= centro_y + radio*np.sin(3*t)
-    z= centro_z + radio*np.sin(5*t)
-
-    trayectoria.append(np.array([x, y, z]))
-"""
-
-n = 10  # valor por defecto 
+n = 10  # valor por defecto, luego se recalcula automáticamente
 
 def aproximar_poligonal(puntos, n_valor):
     pts = np.asarray(puntos, dtype=float)
-
     if n_valor < 1:
         raise ValueError("n_valor debe ser >= 1")
     if len(pts) == 1 or n_valor == 1:
         return [pts[0].copy()]
-
-    # longitud de arco acumulada sobre la trayectoria original
     dist_seg = np.linalg.norm(np.diff(pts, axis=0), axis=1)
     arco = np.concatenate([[0.0], np.cumsum(dist_seg)])
     longitud_total = arco[-1]
-
     if longitud_total < 1e-12:
         return [pts[0].copy() for _ in range(n_valor)]
-
     objetivos = np.linspace(0.0, longitud_total, n_valor)
     vertices = []
     for s in objetivos:
@@ -83,7 +63,7 @@ def aproximar_poligonal(puntos, n_valor):
             vertices.append(p0.copy())
         else:
             t = (s - s0) / (s1 - s0)
-            vertices.append(p0 + t*(p1 - p0))
+            vertices.append(p0 + t*(p1-p0))
     return vertices
 
 poligonal = aproximar_poligonal(trayectoria, n)
@@ -91,10 +71,8 @@ poligonal = aproximar_poligonal(trayectoria, n)
 # volumen escalon
 ESCALON_X_MIN = -0.70
 ESCALON_X_MAX = -0.40
-
 ESCALON_Y_MIN = -0.15
 ESCALON_Y_MAX = 0.15
-
 ESCALON_Z_MIN = -0.40
 ESCALON_Z_MAX = -0.28
 
@@ -103,7 +81,6 @@ vertices = np.array([
     [ESCALON_X_MAX,  ESCALON_Y_MIN, ESCALON_Z_MIN],
     [ESCALON_X_MIN,  ESCALON_Y_MIN, ESCALON_Z_MIN],
     [ESCALON_X_MIN,  ESCALON_Y_MAX, ESCALON_Z_MIN],
-
     [ESCALON_X_MAX,  ESCALON_Y_MAX, ESCALON_Z_MAX],
     [ESCALON_X_MAX,  ESCALON_Y_MIN, ESCALON_Z_MAX],
     [ESCALON_X_MIN,  ESCALON_Y_MIN, ESCALON_Z_MAX],
@@ -119,12 +96,7 @@ caras = [
     [vertices[1], vertices[2], vertices[6], vertices[5]],
 ]
 
-cubo = Poly3DCollection(
-    caras,
-    alpha=0.35,
-    facecolor='gray',
-    edgecolor='black'
-)
+cubo = Poly3DCollection(caras, alpha=0.35, facecolor='gray', edgecolor='black')
 
 # Cinematica directa
 def cinematica_directa(q1,q2,q3,lado):
@@ -158,11 +130,11 @@ def cinematica_inversa(px,py,pz,lado):
     return q1,q2,q3,fuera_de_alcance
 
 def angulos_validos(q1,q2,q3):
-    return (
-        Q1_MIN <= q1 <= Q1_MAX and
-        Q2_MIN <= q2 <= Q2_MAX and
-        Q3_MIN <= q3 <= Q3_MAX
-    )
+    # Convertir a ángulos de motor antes de comparar con límites
+    q1m, q2m, q3m = q_interno_a_motor(q1, q2, q3)
+    return (Q1_MIN <= q1m <= Q1_MAX and
+            Q2_MIN <= q2m <= Q2_MAX and
+            Q3_MIN <= q3m <= Q3_MAX)
 
 def punto_alcanzable(P, lado):
     px,py,pz= P
@@ -171,11 +143,9 @@ def punto_alcanzable(P, lado):
     return (not fuera_geo) and (not fuera_rango), (q1,q2,q3)
 
 def punto_dentro_bloque(P):
-    return (
-        ESCALON_X_MIN <= P[0] <= ESCALON_X_MAX and
-        ESCALON_Y_MIN <= P[1] <= ESCALON_Y_MAX and
-        ESCALON_Z_MIN <= P[2] <= ESCALON_Z_MAX
-    )
+    return (ESCALON_X_MIN <= P[0] <= ESCALON_X_MAX and
+            ESCALON_Y_MIN <= P[1] <= ESCALON_Y_MAX and
+            ESCALON_Z_MIN <= P[2] <= ESCALON_Z_MAX)
 
 def segmento_colisiona(A, B, muestras=50):
     for t in np.linspace(0, 1, muestras):
@@ -214,7 +184,6 @@ def preparar_segmento_poligonal(p0, p3, lado):
     elevacion_max = 0.20
     paso = 0.02
     elevacion = 0.0
-
     while True:
         if elevacion == 0.0:
             cadena = [p0, p3]
@@ -223,20 +192,11 @@ def preparar_segmento_poligonal(p0, p3, lado):
             pm = pm.copy()
             pm[2] += elevacion
             cadena = [p0, pm, p3]
-
-        choca = any(
-            segmento_recto_colisiona(cadena[i], cadena[i+1])
-            for i in range(len(cadena)-1)
-        )
-
+        choca = any(segmento_recto_colisiona(cadena[i], cadena[i+1]) for i in range(len(cadena)-1))
         if not choca:
-            valido = all(
-                segmento_recto_valido(cadena[i], cadena[i+1], lado)
-                for i in range(len(cadena)-1)
-            )
+            valido = all(segmento_recto_valido(cadena[i], cadena[i+1], lado) for i in range(len(cadena)-1))
             if valido:
                 return cadena, False
-
         elevacion += paso
         if elevacion > elevacion_max:
             return [p0, p3], True
@@ -245,26 +205,20 @@ def preparar_segmento_poligonal(p0, p3, lado):
 def reorganizar_trayectoria(puntos, pos_inicial):
     if len(puntos) == 0:
         return puntos
-
     puntos_arr = np.array(puntos)
     inicio = puntos_arr[0]
     fin = puntos_arr[-1]
-
     dist_inicio = np.linalg.norm(inicio - pos_inicial)
     dist_fin = np.linalg.norm(fin - pos_inicial)
-
     if dist_fin < dist_inicio:
         puntos_arr = puntos_arr[::-1]
-
     return [p for p in puntos_arr]
 
 # Preparar trayectoria poligonal completa
 def preparar_trayectoria_completa_poligonal(puntos):
     puntos_validos = [p for p in puntos if punto_alcanzable(p, LADO_FR)[0]]
-
     if len(puntos_validos) < 2:
         return [], True
-
     vertices_totales = [puntos_validos[0]]
     bloqueado_global = False
     for i in range(len(puntos_validos)-1):
@@ -274,9 +228,7 @@ def preparar_trayectoria_completa_poligonal(puntos):
         if bloqueado:
             bloqueado_global = True
             break
-
-    segmentos = [(vertices_totales[i], vertices_totales[i+1])
-                 for i in range(len(vertices_totales)-1)]
+    segmentos = [(vertices_totales[i], vertices_totales[i+1]) for i in range(len(vertices_totales)-1)]
     return segmentos, vertices_totales, bloqueado_global
 
 # Estado y registro
@@ -302,16 +254,12 @@ def iniciar_trayectoria():
     estado['t_segmento']=0.0
     estado['terminado']=False
     estado['segmento_bloqueado']=bloqueado
-
     if bloqueado:
         estado['siguiendo']=False
-        print(f"Ruta no iniciada, se preparo hasta el segmento "
-              f"{len(segs)} (colision sin solucion o angulos fuera de rango).")
+        print(f"Ruta no iniciada, se preparo hasta el segmento {len(segs)} (colision sin solucion o angulos fuera de rango).")
     else:
         estado['siguiendo']=True
-        print(f"Poligonal preparada con {len(segs)} segmentos rectos "
-              f"(n={n} vertices, aproximando la trayectoria original de "
-              f"{len(trayectoria)} puntos)")
+        print(f"Poligonal preparada con {len(segs)} segmentos rectos (n={n} vertices, aproximando la trayectoria original de {len(trayectoria)} puntos)")
 
 def avanzar_al_siguiente():
     if estado['indice_segmento'] >= len(estado['segmentos'])-1:
@@ -325,17 +273,13 @@ def avanzar_al_siguiente():
 def mostrar_reporte_error():
     if len(registro['historial']) == 0: return
     hist_world = np.array([CADERA_FR + p for p in registro['historial']])
-
     tray_world = np.array([CADERA_FR + p for p in trayectoria])
-
     errores = []
     for P in hist_world:
         distancia = _distancia_a_polilinea(P, tray_world)
         errores.append(distancia)
- 
     errores = np.array(errores)
     rmse = np.sqrt(np.mean(errores**2))
- 
     print(f"\nRMSE (distancia a la trayectoria, n={n}): {rmse:.5f} m\n")
     fig2,axs=plt.subplots(2,1,figsize=(9,7))
     axs[0].plot(errores,'o-',color='crimson',markersize=3)
@@ -346,24 +290,15 @@ def mostrar_reporte_error():
     axs[0].set_xlabel("Frame"); axs[0].set_ylabel("Error perpendicular")
     axs[0].legend(fontsize=8); axs[0].grid(alpha=0.3)
     hist = np.array(registro['historial'])
-
-    # Paso de tiempo de la simulación
     dt = 0.02
-    # Velocidad
     vel = np.diff(hist, axis=0) / dt
     velocidad = np.linalg.norm(vel, axis=1)
-    # Aceleración
     ace = np.diff(vel, axis=0) / dt
     aceleracion = np.linalg.norm(ace, axis=1)
     tiempo_v = np.arange(len(velocidad)) * dt
     tiempo_a = np.arange(len(aceleracion)) * dt
-    axs[1].plot(tiempo_v, velocidad,
-                color='royalblue',
-                label='Velocidad')
-    axs[1].plot(tiempo_a, aceleracion,
-                color='darkorange',
-                label='Aceleración')
-
+    axs[1].plot(tiempo_v, velocidad, color='royalblue', label='Velocidad')
+    axs[1].plot(tiempo_a, aceleracion, color='darkorange', label='Aceleración')
     axs[1].set_xlabel("Tiempo")
     axs[1].set_ylabel("Magnitud")
     axs[1].set_title(f"Velocidad y aceleración de la trayectoria poligonal (n={n})")
@@ -383,7 +318,6 @@ def _distancia_a_polilinea(P, ref):
 def rmse_poligonal_vs_trayectoria(puntos_trayectoria, n_valor, muestras_por_segmento=25):
     ref = np.asarray(puntos_trayectoria, dtype=float)
     verts = np.array(aproximar_poligonal(ref, n_valor))
-
     errores = []
     for i in range(len(verts)-1):
         p0, p1 = verts[i], verts[i+1]
@@ -391,19 +325,18 @@ def rmse_poligonal_vs_trayectoria(puntos_trayectoria, n_valor, muestras_por_segm
             punto = p0 + u*(p1-p0)
             errores.append(_distancia_a_polilinea(punto, ref))
     errores.append(_distancia_a_polilinea(verts[-1], ref))
-
     errores = np.array(errores)
     return np.sqrt(np.mean(errores**2))
 
 RMSE_OBJETIVO = 0.005
-N_AUTOMATICO = True     
+N_AUTOMATICO = True
 
 def encontrar_n_automatico(puntos_trayectoria, rmse_objetivo, n_min=2, n_max=None):
     if n_max is None:
         n_max = len(puntos_trayectoria)
     for n_candidato in range(n_min, n_max + 1):
         rmse_actual = rmse_poligonal_vs_trayectoria(puntos_trayectoria, n_candidato)
-        if n_max>= 5:    
+        if n_max >= 5:
             if rmse_actual <= rmse_objetivo and n_candidato > 4:
                 return n_candidato, rmse_actual
         if n_max < 5:
@@ -419,7 +352,6 @@ if N_AUTOMATICO:
 
 def graficar_rmse_vs_n(puntos_trayectoria, valores_n, n_usado):
     rmses = [rmse_poligonal_vs_trayectoria(puntos_trayectoria, nv) for nv in valores_n]
-
     fig3, ax3 = plt.subplots(figsize=(7,5))
     ax3.plot(valores_n, rmses, 'o-', color='darkviolet')
     ax3.axvline(n_usado, color='gray', linestyle='--', alpha=0.6, label=f"n usado en la simulacion = {n_usado}")
