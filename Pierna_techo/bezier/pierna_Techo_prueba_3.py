@@ -6,516 +6,242 @@ from matplotlib.animation import FuncAnimation
 from matplotlib.widgets import Button
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
-# Parametros
-a1=0.0528; L2=0.2142; L3=0.2142
-CADERA_FR=np.array([-0.29785,-0.055,0.0]); LADO_FR=-1
-
-# Límites reales de los motores (rad)
-Q1_MIN, Q1_MAX = -0.6, 0.5      # Shoulder Abduction
-Q2_MIN, Q2_MAX = -1.7, 1.7      # Shoulder Rotation
-Q3_MIN, Q3_MAX = -0.45, 1.6     # Elbow
-#### REVISAR SI ES NECESARIO CAMBIAR LA CINEMATICA (ENTERAAAAA AAA)
-############
-#Conversión entre el ángulo INTERNO de la cinemática y el ángulo del motor de webots
-# La cinemática (cinematica_inversa) usa una convencion diferente:
-#   q1: arccos(...) -> siempre en [0, pi]; q1=pi/2 corresponde a la pierna vertical.
-#   q2: ya coincide de forma directa con la convencion real (sin offset/inversion).
-#   q3: siempre <= 0 (0 = pierna extendida, negativo = flexion).ax
-# Se asume que el motor real tiene su cero en la pierna vertical (q1) y que el
-# signo de flexion del codo está invertido respecto al interno (q3).
-Q1_OFFSET = np.pi/2   # q1_motor = q1_interno - Q1_OFFSET
-Q3_SIGN   = -1.0       # q3_motor = Q3_SIGN * q3_interno
-
-def q_interno_a_motor(q1, q2, q3):
-    return q1 - Q1_OFFSET, q2, Q3_SIGN * q3
-
-trayectoria= []
-
-# Trayectoria espiral conica hacia abajo
-def generar_espiral_conica(centro=(0,0,-0.3820), R0=0.026, Rf=0.0083, vueltas=3, n_puntos=30, z_inicial=-0.360, z_final=-0.425):
-    puntos=[]
-    for i in range(n_puntos):
-        t = i / (n_puntos-1)
-        radio = R0 - (R0-Rf)*t
-        angulo = 2*np.pi * vueltas * t
-        x = centro[0] + radio*np.cos(angulo)
-        y = centro[1] + radio*np.sin(angulo)
-        z = z_inicial + (z_final-z_inicial)*t
-        puntos.append(np.array([x,y,z]))
-    return puntos
-
-trayectoria = generar_espiral_conica()
-
-"""
-radio= 0.05
-
-centro_x= 0.0
-centro_y= 0.0
-centro_z= -0.3820
-
-num_puntos= 30
-
-for t in np.linspace(0, 2*np.pi, num_puntos, endpoint=True):
-
-    x= centro_x + radio*np.cos(2*t)
-    y= centro_y + radio*np.sin(3*t)
-    z= centro_z + radio*np.sin(5*t)
-
-    trayectoria.append(np.array([x, y, z]))
-trayectoria.append(np.array([0.0,0,-0.3820]))
-trayectoria.append(np.array([-0.1,0,-0.25]))
-"""
-
-
-def distancia_a_polilinea(P, ref):
-    mejor = np.inf
-
-    for i in range(len(ref)-1):
-        d = distancia_punto_segmento(P, ref[i], ref[i+1])
-
-        if d < mejor:
-            mejor = d
-
-    return mejor
-
-
-# volumen escalon
-ESCALON_X_MIN = -0.70
-ESCALON_X_MAX = -0.40
-
-ESCALON_Y_MIN = -0.15
-ESCALON_Y_MAX = 0.15
-
-ESCALON_Z_MIN = -0.40
-ESCALON_Z_MAX = -0.28
-
-vertices = np.array([
-    [ESCALON_X_MAX,  ESCALON_Y_MAX, ESCALON_Z_MIN],
-    [ESCALON_X_MAX,  ESCALON_Y_MIN, ESCALON_Z_MIN],
-    [ESCALON_X_MIN,  ESCALON_Y_MIN, ESCALON_Z_MIN],
-    [ESCALON_X_MIN,  ESCALON_Y_MAX, ESCALON_Z_MIN],
-
-    [ESCALON_X_MAX,  ESCALON_Y_MAX, ESCALON_Z_MAX],
-    [ESCALON_X_MAX,  ESCALON_Y_MIN, ESCALON_Z_MAX],
-    [ESCALON_X_MIN,  ESCALON_Y_MIN, ESCALON_Z_MAX],
-    [ESCALON_X_MIN,  ESCALON_Y_MAX, ESCALON_Z_MAX],
-])
-
-caras = [
-    [vertices[0], vertices[1], vertices[2], vertices[3]],
-    [vertices[4], vertices[5], vertices[6], vertices[7]],
-    [vertices[0], vertices[1], vertices[5], vertices[4]],
-    [vertices[2], vertices[3], vertices[7], vertices[6]],
-    [vertices[0], vertices[3], vertices[7], vertices[4]],
-    [vertices[1], vertices[2], vertices[6], vertices[5]],
-]
-
-cubo = Poly3DCollection(
-    caras,
-    alpha=0.35,
-    facecolor='gray',
-    edgecolor='black'
+from pata_common import (
+    cinematica_directa,
+    cinematica_inversa,
+    punto_alcanzable,
+    generar_espiral,
+    generar_lissajous,
+    generar_escalon,
+    bezier_cubico,
+    preparar_trayectoria_completa,
+    reorganizar_trayectoria,
+    calcular_errores,
+    calcular_velocidad_aceleracion,
+    generar_bezier_completa,
 )
 
-# Cinematica directa
-def cinematica_directa(q1,q2,q3,lado):
-    c1,s1=np.cos(q1),np.sin(q1); c2,s2=np.cos(q2),np.sin(q2); c23,s23=np.cos(q2+q3),np.sin(q2+q3)
-    O0=np.array([0.0,0.0,0.0])
-    O1=np.array([0.0,lado*a1*c1,-a1*s1])
-    O2=O1+np.array([L2*s2,0.0,-L2*c2])
-    O3=O2+np.array([L3*s23,0.0,-L3*c23])
-    return O0,O1,O2,O3
 
-# Cinematica inversa
-def cinematica_inversa(px,py,pz,lado):
-    py_l=py*lado
-    ratio_sin_clip=py_l/a1
-    ratio=np.clip(ratio_sin_clip,-1.0,1.0)
-    q1=np.arccos(ratio)
-    O1_z=-a1*np.sin(q1)
-    dx=px; dz=pz-O1_z
-    R_sin_clip=np.hypot(dx,dz)
-    R=min(R_sin_clip,L2+L3-1e-6)
-    C3_sin_clip=(R**2-L2**2-L3**2)/(2.0*L2*L3)
-    C3=np.clip(C3_sin_clip,-1.0,1.0)
-    q3=-np.arctan2(np.sqrt(1.0-C3**2),C3)
-    k1=L2+L3*np.cos(q3); k2=L3*np.sin(q3)
-    q2=np.arctan2(dx,-dz)-np.arctan2(k2,k1)
-    fuera_de_alcance= (
-        abs(ratio_sin_clip-ratio) > 1e-9
-        or abs(R_sin_clip-R) > 1e-9
-        or abs(C3_sin_clip-C3) > 1e-9
+# Selección de trayectoria
+
+# Opciones: 'espiral', 'lissajous', 'escalon'
+TIPO_TRAYECTORIA = 'escalon'   
+
+# Parámetros de las trayectorias ajustados para que sean alcanzables por la FL
+if TIPO_TRAYECTORIA == 'espiral':
+    trayectoria = generar_espiral(
+        centro=(0.0, 0.0, -0.3820),
+        R0=0.026, Rf=0.008,
+        vueltas=3, n_puntos=60,
+        z_ini=-0.360, z_fin=-0.425
     )
-    return q1,q2,q3,fuera_de_alcance
-
-def angulos_validos(q1,q2,q3):
-    q1m, q2m, q3m = q_interno_a_motor(q1, q2, q3)
-    return (
-        Q1_MIN <= q1m <= Q1_MAX and
-        Q2_MIN <= q2m <= Q2_MAX and
-        Q3_MIN <= q3m <= Q3_MAX
+elif TIPO_TRAYECTORIA == 'lissajous':
+   
+    trayectoria = generar_lissajous(
+        centro=(0.0, 0.04, -0.38),
+        radio=0.015,
+        frecuencias=(2, 3, 5),
+        n_puntos=100
     )
+elif TIPO_TRAYECTORIA == 'escalon':
+    # Escalón pequeño en la misma zona
+    trayectoria = generar_escalon()
+else:
+    raise ValueError("TIPO_TRAYECTORIA no válido. Usa 'espiral', 'lissajous' o 'escalon'.")
 
-def punto_alcanzable(P, lado):
-    px,py,pz= P
-    q1,q2,q3,fuera_geo= cinematica_inversa(px,py,pz,lado)
-    fuera_rango= not angulos_validos(q1,q2,q3)
-    return (not fuera_geo) and (not fuera_rango), (q1,q2,q3)
+
+# Parametros propios de FL pata (delantera izquierda, FL)
+
+LADO = 1                       # pata delantera izquierda
+CADERA = np.array([0.0, 0.0, 0.0])
+
+DT = 0.02                      # paso de tiempo
+DURACION_SEGMENTO = 0.3        # duración de cada segmento Bezier
+
+
+# Reporte de alcanzabilidad y filtrado inicial
 
 def reporte_alcanzabilidad(puntos, lado):
     total = len(puntos)
     alcanzables = 0
-    for i, P in enumerate(puntos):
-        ok, _ = punto_alcanzable(P, lado)
-        if ok:
+    for i, p in enumerate(puntos):
+        if punto_alcanzable(p, lado):
             alcanzables += 1
         else:
-            print(f"  Punto {i} fuera de rango: {P}")
-    print(f"Alcanzabilidad: {alcanzables}/{total} puntos dentro de los límites reales del motor")
+            print(f"  Punto {i} fuera de rango: {p}")
+    print(f"Alcanzabilidad: {alcanzables}/{total} puntos dentro de los limites reales del motor")
     return alcanzables, total
 
-reporte_alcanzabilidad(trayectoria, LADO_FR)
 
-def punto_dentro_bloque(P):
-    return (
-        ESCALON_X_MIN <= P[0] <= ESCALON_X_MAX and
-        ESCALON_Y_MIN <= P[1] <= ESCALON_Y_MAX and
-        ESCALON_Z_MIN <= P[2] <= ESCALON_Z_MAX
-    )
+alcanzables, total = reporte_alcanzabilidad(trayectoria, LADO)
+if alcanzables < 2:
+    raise RuntimeError("No hay suficientes puntos alcanzables en la trayectoria.")
 
-def segmento_colisiona(A, B, muestras=50):
-    for t in np.linspace(0, 1, muestras):
-        P = A + t * (B - A)
-        if punto_dentro_bloque(P):
-            return True
-    return False
+trayectoria_valida = [p for p in trayectoria if punto_alcanzable(p, LADO)]
 
-# Bezier cubico
-def bezier_cubico(p0,p1,p2,p3,t):
-    u=1-t
-    return u**3*p0+3*u**2*t*p1+3*u*t**2*p2+t**3*p3
-
-def bezier_colisiona(p0, p1, p2, p3, muestras=40):
-    for u in np.linspace(0.0, 1.0, muestras):
-        punto_local= bezier_cubico(p0, p1, p2, p3, u)
-        if punto_dentro_bloque(CADERA_FR + punto_local):
-            return True
-    return False
-
-def segmento_bezier_valido(p0, p1, p2, p3, lado, muestras=20):
-    for u in np.linspace(0.0, 1.0, muestras):
-        punto= bezier_cubico(p0, p1, p2, p3, u)
-        ok, _= punto_alcanzable(punto, lado)
-        if not ok:
-            return False
-    return True
-
-def distancia_punto_segmento(P, A, B):
-    AB = B - A
-    AP = P - A
-    largo2 = np.dot(AB, AB)
-    if largo2 < 1e-12:
-        return np.linalg.norm(P - A)
-    t = np.clip(np.dot(AP, AB) / largo2, 0.0, 1.0)
-    proyeccion = A + t * AB
-    return np.linalg.norm(P - proyeccion)
-
-# Preparar segmento
-def preparar_segmento(p0,p3,tang_in,tang_out):
-    elevacion_max= 0.20
-    paso= 0.02
-
-    def construir(factor_curv, elevacion):
-        p1=p0 + (1.0/3.0)*tang_in*factor_curv
-        p2=p3 - (1.0/3.0)*tang_out*factor_curv
-        p1=p1.copy(); p2=p2.copy()
-        p1[2]+=elevacion; p2[2]+=elevacion
-        return p1, p2
-
-    for factor_curv in (1.5, 1.0, 0.6, 0.3, 0.0):
-
-        elevacion= 0.0
-        p1, p2= construir(factor_curv, elevacion)
-
-        while bezier_colisiona(p0,p1,p2,p3):
-
-            elevacion+= paso
-
-            if elevacion > elevacion_max:
-                break
-
-            p1, p2= construir(factor_curv, elevacion)
-        else:
-            # curva libre de colision con este factor_curv/elevacion
-            # verificar angulos articulares en todo el recorrido
-            if segmento_bezier_valido(p0,p1,p2,p3,LADO_FR):
-                return [(p0,p1,p2,p3)], False
-
-    # Ningun factor de curvatura ni elevacion resolvio colision y
-    # angulos a la vez
-    return [(p0,p1,p2,p3)], True
-
-# Calcular tangentes
-def calcular_tangentes(puntos):
-    n=len(puntos)
-    tangentes=[]
-    for i in range(n):
-        if i==0:
-            tang=(puntos[1]-puntos[0])
-        elif i==n-1:
-            tang=(puntos[-1]-puntos[-2])
-        else:
-            tang=(puntos[i+1]-puntos[i-1])/2.0
-        if i<n-1:
-            dist=np.linalg.norm(puntos[i+1]-puntos[i])
-            if np.linalg.norm(tang)>0:
-                tang= tang / np.linalg.norm(tang) * dist
-        tangentes.append(tang)
-    return tangentes
-
-# Reorganizar trayectoria desde la posicion actual
-def reorganizar_trayectoria(puntos, pos_inicial):
-    if len(puntos) == 0:
-        return puntos
-    
-    puntos_arr = np.array(puntos)
-    inicio = puntos_arr[0]
-    fin = puntos_arr[-1]
-    
-    dist_inicio = np.linalg.norm(inicio - pos_inicial)
-    dist_fin = np.linalg.norm(fin - pos_inicial)
-    
-    if dist_fin < dist_inicio:
-        puntos_arr = puntos_arr[::-1]
-        
-    return [p for p in puntos_arr]
-
-# Preparar trayectoria completa
-def preparar_trayectoria_completa(puntos):
-    puntos_validos= [p for p in puntos if punto_alcanzable(p, LADO_FR)[0]]
-
-    if len(puntos_validos) < 2:
-        return [], True
-
-    tang=calcular_tangentes(puntos_validos)
-    segmentos=[]
-    bloqueado_global=False
-    for i in range(len(puntos_validos)-1):
-        p0=puntos_validos[i]; p3=puntos_validos[i+1]
-        segs, bloqueado = preparar_segmento(p0,p3,tang[i],tang[i+1])
-        segmentos.extend(segs)
-        if bloqueado:
-            bloqueado_global=True
-            break
-    return segmentos, bloqueado_global
 
 # Estado y registro
-estado={'actual':np.array([0.0,-a1,-0.30]),'t_segmento':0.0,'indice_segmento':0,
-        'siguiendo':False,'terminado':False,'segmentos':[],
-        'segmento_bloqueado':False,'tolerancia':0.005}
-registro={'historial':[],'segmentos_reales':[]}
+
+estado = {
+    'actual': trayectoria_valida[0].copy(),
+    't_segmento': 0.0,
+    'indice_segmento': 0,
+    'siguiendo': False,
+    'terminado': False,
+    'segmentos': [],
+}
+registro = {'historial': []}
 
 def puntos_pata(pos):
-    q1,q2,q3,_=cinematica_inversa(pos[0],pos[1],pos[2],LADO_FR)
-    pts=cinematica_directa(q1,q2,q3,LADO_FR)
-    return [CADERA_FR+p for p in pts]
+    q = cinematica_inversa(pos[0], pos[1], pos[2], LADO)
+    if q is None:
+        # Si momentaneamente no es alcanzable, se mantiene la ultima pose valida
+        q = (np.pi / 2, 0.0, 0.0)
+    pts = cinematica_directa(*q, LADO)
+    return [CADERA + p for p in pts]
 
 def iniciar_trayectoria():
-    if len(trayectoria)<2: return
-    tray_ordenada = reorganizar_trayectoria(trayectoria, estado['actual'])
-    registro['historial'].clear(); registro['segmentos_reales'].clear()
-    segs,bloqueado=preparar_trayectoria_completa(tray_ordenada)
-    estado['segmentos']=segs
-    estado['actual']=tray_ordenada[0].copy()
-    estado['indice_segmento']=0
-    estado['t_segmento']=0.0
-    estado['terminado']=False
-    estado['segmento_bloqueado']=bloqueado
+    if len(trayectoria_valida) < 2:
+        print("No hay suficientes puntos alcanzables para iniciar la ruta.")
+        return
 
-    if bloqueado:
-        estado['siguiendo']=False
-        print(f"Ruta no iniciada se preparo hasta el segmento "
-              f"{len(segs)} de {len(tray_ordenada)-1} (colision sin solucion "
-              f"o angulos fuera de rango).")
-    else:
-        estado['siguiendo']=True
-        print(f"Trayectoria preparada con {len(segs)} segmentos")
+    # Reordenamos para empezar por el extremo más cercano a la posición actual
+    tray_ordenada = reorganizar_trayectoria(trayectoria_valida, estado['actual'])
+
+    registro['historial'].clear()
+    segmentos = preparar_trayectoria_completa(tray_ordenada, LADO)
+
+    estado['segmentos'] = segmentos
+    estado['actual'] = tray_ordenada[0].copy()
+    estado['indice_segmento'] = 0
+    estado['t_segmento'] = 0.0
+    estado['terminado'] = False
+    estado['siguiendo'] = True
+    print(f"Trayectoria preparada con {len(segmentos)} segmentos")
 
 def avanzar_al_siguiente():
-    if estado['indice_segmento'] >= len(estado['segmentos'])-1:
-        estado['siguiendo']=False
-        estado['terminado']=True
+    if estado['indice_segmento'] >= len(estado['segmentos']) - 1:
+        estado['siguiendo'] = False
+        estado['terminado'] = True
         mostrar_reporte_error()
     else:
-        estado['indice_segmento']+=1
-        estado['t_segmento']=0.0
-
-def distancia_a_ruta_planeada(P, segmentos_bezier, muestras_por_segmento=60):
-    mejor= np.inf
-    for (p0, p1, p2, p3) in segmentos_bezier:
-        curva= np.array([
-            bezier_cubico(p0, p1, p2, p3, u)
-            for u in np.linspace(0.0, 1.0, muestras_por_segmento)
-        ])
-        for i in range(len(curva) - 1):
-            d= distancia_punto_segmento(P, curva[i], curva[i + 1])
-            if d < mejor:
-                mejor= d
-    return mejor
-
-def distancia_a_polilinea(P, trayectoria):
-    mejor = np.inf
-
-    for i in range(len(trayectoria) - 1):
-        d = distancia_punto_segmento(
-            P,
-            trayectoria[i],
-            trayectoria[i + 1]
-        )
-
-        if d < mejor:
-            mejor = d
-
-    return mejor
+        estado['indice_segmento'] += 1
+        estado['t_segmento'] = 0.0
 
 def mostrar_reporte_error():
-    if len(registro['historial']) == 0: return
-    hist_world = np.array([CADERA_FR + p for p in registro['historial']])
-    
-    tray_world = np.array([CADERA_FR + p for p in trayectoria])
-    
-    errores = []
+    if len(registro['historial']) == 0:
+        return
 
-    for P in hist_world:
-        errores.append(
-            distancia_a_polilinea(P, tray_world)
-        )
-        
-    errores = np.array(errores)
-    rmse = np.sqrt(np.mean(errores**2))
-    
-    print(f"\nRMSE (distancia a la trayectoria): {rmse:.5f} m\n")
-    fig2,axs=plt.subplots(2,1,figsize=(9,7))
-    axs[0].plot(errores,'o-',color='crimson',markersize=3)
-    axs[0].axhline(estado['tolerancia'], color='gray', linestyle='--',
-                   label=f"tolerancia ({estado['tolerancia']} m)")
-    axs[0].axhline(rmse, color='dodgerblue', linestyle=':',
-                   label=f"RMSE ({rmse:.5f} m)")
-    axs[0].set_xlabel("Frame"); axs[0].set_ylabel("Error perpendicular")
+    # Curva Bezier planeada muestreada densamente -> referencia para el error
+    bezier_planeada = generar_bezier_completa(estado['segmentos'], puntos_por_segmento=60)
+
+    errores, rmse = calcular_errores(registro['historial'], bezier_planeada)
+    velocidad, aceleracion = calcular_velocidad_aceleracion(registro['historial'], DT)
+
+    print(f"\nRMSE (distancia real vs. Bezier planeada): {rmse:.6f} m\n")
+
+    fig2, axs = plt.subplots(2, 1, figsize=(9, 7))
+    axs[0].plot(errores, 'o-', color='crimson', markersize=3)
+    axs[0].axhline(rmse, color='dodgerblue', linestyle=':', label=f"RMSE ({rmse:.5f} m)")
+    axs[0].set_xlabel("Frame"); axs[0].set_ylabel("Error perpendicular (m)")
+    axs[0].set_title("Error de seguimiento de trayectoria")
     axs[0].legend(fontsize=8); axs[0].grid(alpha=0.3)
-    hist = np.array(registro['historial'])
 
-    # Paso de tiempo de la simulacion
-    dt = 0.02
-    # Velocidad 
-    vel = np.diff(hist, axis=0) / dt
-    velocidad = np.linalg.norm(vel, axis=1)
-    # Aceleracion 
-    ace = np.diff(vel, axis=0) / dt
-    aceleracion = np.linalg.norm(ace, axis=1)
-    tiempo_v = np.arange(len(velocidad)) * dt
-    tiempo_a = np.arange(len(aceleracion)) * dt
-    axs[1].plot(tiempo_v, velocidad,
-                color='royalblue',
-                label='Velocidad')
-    axs[1].plot(tiempo_a, aceleracion,
-                color='darkorange',
-                label='Aceleracion')
+    tiempo_v = np.arange(len(velocidad)) * DT
+    tiempo_a = np.arange(len(aceleracion)) * DT
+    axs[1].plot(tiempo_v, velocidad, color='royalblue', label='Velocidad')
+    axs[1].plot(tiempo_a, aceleracion, color='darkorange', label='Aceleracion')
+    axs[1].set_xlabel("Tiempo (s)"); axs[1].set_ylabel("Magnitud")
+    axs[1].set_title("Velocidad y aceleracion de la trayectoria")
+    axs[1].legend(); axs[1].grid(alpha=0.3)
+    fig2.tight_layout()
+    fig2.show()
 
-    axs[1].set_xlabel("Tiempo")
-    axs[1].set_ylabel("Magnitud")
-    axs[1].set_title("Velocidad y aceleración de la trayectoria")
-    axs[1].legend()
-    axs[1].grid(alpha=0.3)
-    fig2.tight_layout(); fig2.show()
 
 # Figura y animacion
-fig=plt.figure(figsize=(12,8))
-ax=fig.add_subplot(111,projection='3d')
-ax.set_title("Bezier cubico con espiral conica y evasion de escalon")
+
+fig = plt.figure(figsize=(12, 8))
+ax = fig.add_subplot(111, projection='3d')
+ax.set_title("Simulador externo - pata FL (sin Webots)")
 ax.set_xlabel("X"); ax.set_ylabel("Y"); ax.set_zlabel("Z")
-limite=0.3
-ax.set_xlim(-limite, limite)
-ax.set_ylim(-limite, limite)
-ax.set_zlim(-0.50, -0.20)
-ax.set_box_aspect([1,1,1])
+ax.set_xlim(-0.3, 0.4)
+ax.set_ylim(-0.2, 0.5)
+ax.set_zlim(-0.5, 0.0)
+ax.set_box_aspect([1, 1, 1])
 ax.view_init(elev=30, azim=45)
-ax.add_collection3d(cubo)
 
-# Mostrar trayectoria planeada
-tray_world=np.array([CADERA_FR+p for p in trayectoria])
-ax.plot(tray_world[:,0],tray_world[:,1],tray_world[:,2],'--',color='dodgerblue',linewidth=1.2,label='Waypoints')
-ax.scatter(tray_world[:,0],tray_world[:,1],tray_world[:,2],color='blue',s=30)
+# Mostramos todos los waypoints (incluidos los no alcanzables, pero se distinguen)
+tray_world = np.array([CADERA + p for p in trayectoria])
+ax.plot(tray_world[:, 0], tray_world[:, 1], tray_world[:, 2],
+        '--', color='dodgerblue', linewidth=1.2, label='Waypoints')
+ax.scatter(tray_world[:, 0], tray_world[:, 1], tray_world[:, 2], color='blue', s=30)
 
-linea_seguida,=ax.plot([],[],[],'-',color='crimson',linewidth=1.3,alpha=0.85,label='Real')
-curva_bezier,=ax.plot([],[],[],'-',color='lime',linewidth=2,label='Bezier')
+linea_seguida, = ax.plot([], [], [], '-', color='crimson', linewidth=1.3, alpha=0.85, label='Real')
+curva_bezier, = ax.plot([], [], [], '-', color='lime', linewidth=2, label='Bezier')
 
-# Pierna inicial
-O0,O1,O2,O3=puntos_pata(trayectoria[0])
-l01,=ax.plot([O0[0],O1[0]],[O0[1],O1[1]],[O0[2],O1[2]],color='red',lw=4)
-l12,=ax.plot([O1[0],O2[0]],[O1[1],O2[1]],[O1[2],O2[2]],color='red',lw=4)
-l23,=ax.plot([O2[0],O3[0]],[O2[1],O3[1]],[O2[2],O3[2]],color='red',lw=4)
-articulaciones=ax.scatter([O0[0],O1[0],O2[0],O3[0]],[O0[1],O1[1],O2[1],O3[1]],[O0[2],O1[2],O2[2],O3[2]],color='red',s=40)
-pie,=ax.plot([O3[0]],[O3[1]],[O3[2]],'o',color='gold',markersize=10,markeredgecolor='black')
-objetivo_plot,=ax.plot([CADERA_FR[0]],[CADERA_FR[1]],[CADERA_FR[2]],'x',color='green',markersize=12,markeredgewidth=3)
-ax.legend(loc='upper left',fontsize=8)
-texto_estado=fig.text(0.02,0.95,"",fontsize=9,family='monospace',va='top')
-ax_btn=plt.axes([0.75,0.03,0.18,0.05])
-boton=Button(ax_btn,'Iniciar Ruta',color='lightgray',hovercolor='lightblue')
+O0, O1, O2, O3 = puntos_pata(estado['actual'])
+l01, = ax.plot([O0[0], O1[0]], [O0[1], O1[1]], [O0[2], O1[2]], color='red', lw=4)
+l12, = ax.plot([O1[0], O2[0]], [O1[1], O2[1]], [O1[2], O2[2]], color='red', lw=4)
+l23, = ax.plot([O2[0], O3[0]], [O2[1], O3[1]], [O2[2], O3[2]], color='red', lw=4)
+articulaciones = ax.scatter([O0[0], O1[0], O2[0], O3[0]],
+                             [O0[1], O1[1], O2[1], O3[1]],
+                             [O0[2], O1[2], O2[2], O3[2]], color='red', s=40)
+pie, = ax.plot([O3[0]], [O3[1]], [O3[2]], 'o', color='gold', markersize=10, markeredgecolor='black')
+
+ax.legend(loc='upper left', fontsize=8)
+texto_estado = fig.text(0.02, 0.95, "", fontsize=9, family='monospace', va='top')
+ax_btn = plt.axes([0.75, 0.03, 0.18, 0.05])
+boton = Button(ax_btn, 'Iniciar Ruta', color='lightgray', hovercolor='lightblue')
 boton.on_clicked(lambda event: iniciar_trayectoria())
 
 def actualizar(frame):
-    dt=0.02
     if estado['siguiendo']:
-        estado['t_segmento']+=dt
-        s=np.clip(estado['t_segmento']/0.50,0.0,1.0)
-        u=3*s**2-2*s**3
-        idx=estado['indice_segmento']
-        p0,p1,p2,p3=estado['segmentos'][idx]
-        estado['actual']=bezier_cubico(p0,p1,p2,p3,u)
+        estado['t_segmento'] += DT
+        s = np.clip(estado['t_segmento'] / DURACION_SEGMENTO, 0.0, 1.0)
+        u = 3 * s ** 2 - 2 * s ** 3
+        idx = estado['indice_segmento']
+        p0, p1, p2, p3 = estado['segmentos'][idx]
+        estado['actual'] = bezier_cubico(p0, p1, p2, p3, u)
         registro['historial'].append(estado['actual'].copy())
-        if estado['t_segmento']>=0.50:
-            registro['segmentos_reales'].append((p0.copy(),p1.copy(),p2.copy(),p3.copy()))
+        if estado['t_segmento'] >= DURACION_SEGMENTO:
             avanzar_al_siguiente()
-    O0,O1,O2,O3=puntos_pata(estado['actual'])
 
-    if (segmento_colisiona(O1, O2) or segmento_colisiona(O2, O3)):
-        l12.set_color('orange')
-        l23.set_color('orange')
-    else:
-        l12.set_color('red')
-        l23.set_color('red')
+    O0, O1, O2, O3 = puntos_pata(estado['actual'])
+    l01.set_data_3d([O0[0], O1[0]], [O0[1], O1[1]], [O0[2], O1[2]])
+    l12.set_data_3d([O1[0], O2[0]], [O1[1], O2[1]], [O1[2], O2[2]])
+    l23.set_data_3d([O2[0], O3[0]], [O2[1], O3[1]], [O2[2], O3[2]])
+    articulaciones._offsets3d = ([O0[0], O1[0], O2[0], O3[0]],
+                                  [O0[1], O1[1], O2[1], O3[1]],
+                                  [O0[2], O1[2], O2[2], O3[2]])
+    pie.set_data_3d([O3[0]], [O3[1]], [O3[2]])
 
-    l01.set_data_3d([O0[0],O1[0]],[O0[1],O1[1]],[O0[2],O1[2]])
-    l12.set_data_3d([O1[0],O2[0]],[O1[1],O2[1]],[O1[2],O2[2]])
-    l23.set_data_3d([O2[0],O3[0]],[O2[1],O3[1]],[O2[2],O3[2]])
-    articulaciones._offsets3d=([O0[0],O1[0],O2[0],O3[0]],[O0[1],O1[1],O2[1],O3[1]],[O0[2],O1[2],O2[2],O3[2]])
-    pie.set_data_3d([O3[0]],[O3[1]],[O3[2]])
-    if len(registro['historial'])>1:
-        hist=np.array(registro['historial'])
-        hist_world=CADERA_FR+hist
-        linea_seguida.set_data_3d(hist_world[:,0],hist_world[:,1],hist_world[:,2])
+    if len(registro['historial']) > 1:
+        hist = np.array(registro['historial'])
+        hist_world = CADERA + hist
+        linea_seguida.set_data_3d(hist_world[:, 0], hist_world[:, 1], hist_world[:, 2])
+
     if estado['siguiendo'] or estado['terminado']:
-        pts=[]
+        pts = []
         for seg in estado['segmentos']:
-            p0,p1,p2,p3=seg
-            for t in np.linspace(0,1,20):
-                pts.append(bezier_cubico(CADERA_FR+p0, CADERA_FR+p1, CADERA_FR+p2, CADERA_FR+p3, t))
-        pts=np.array(pts)
-        curva_bezier.set_data_3d(pts[:,0],pts[:,1],pts[:,2])
-        curva_bezier.set_color('red' if estado['segmento_bloqueado'] else 'lime')
-    else:
-        curva_bezier.set_data_3d([],[],[])
-    if estado['siguiendo'] or estado['terminado']:
+            p0, p1, p2, p3 = seg
+            for t in np.linspace(0, 1, 20):
+                pts.append(bezier_cubico(CADERA + p0, CADERA + p1, CADERA + p2, CADERA + p3, t))
+        pts = np.array(pts)
+        curva_bezier.set_data_3d(pts[:, 0], pts[:, 1], pts[:, 2])
+
         if estado['siguiendo']:
-            estado_txt='en ruta'
-        elif estado['segmento_bloqueado']:
-            estado_txt='detenido (bloqueado)'
+            estado_txt = 'en ruta'
         else:
-            estado_txt='completado'
-        texto_estado.set_text(f"Segmento: {estado['indice_segmento']+1}/{len(estado['segmentos'])}\nPuntos: {len(registro['historial'])}\nEstado: {estado_txt}")
+            estado_txt = 'completado'
+        texto_estado.set_text(
+            f"Segmento: {estado['indice_segmento'] + 1}/{len(estado['segmentos'])}\n"
+            f"Puntos: {len(registro['historial'])}\nEstado: {estado_txt}"
+        )
+    else:
+        curva_bezier.set_data_3d([], [], [])
+
     return []
 
-ani=FuncAnimation(fig,actualizar,interval=20,blit=False)
+ani = FuncAnimation(fig, actualizar, interval=int(DT * 1000), blit=False)
 plt.tight_layout()
 plt.show()

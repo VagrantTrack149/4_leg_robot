@@ -44,7 +44,7 @@ Spot {
   hidden rotation_33 -1 0 0 1.3657139822709086e-07
   translation 0.00152993 0.035 0.125186
   rotation 0.5208533609134843 0.7319256403391415 0.43931382113389655 0.011285612347968375
-  controller "bezier_prueba"
+  controller "my_controller"
 }
 TexturedBackground {
 }
