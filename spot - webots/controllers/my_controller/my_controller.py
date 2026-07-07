@@ -21,10 +21,10 @@ from pata_common import (
 MOSTRAR_EN_VIVO = False   # Cambiar a False para ejecutar sin gráficas en tiempo real
 
 # Tipo de trayectoria base: 'espiral', 'lissajous', 'escalon'
-TIPO_TRAYECTORIA = 'escalon'
+TIPO_TRAYECTORIA = 'espiral'
 
 # Modo de seguimiento: 'bezier', 'lineal', 'poligonal'
-MODO_SEGUIMIENTO = 'lineal'  
+MODO_SEGUIMIENTO = 'bezier'  
 
 # Parámetros para el modo poligonal (número de subsegmentos por tramo)
 SUBSEGMENTOS_POLIGONAL = 10
