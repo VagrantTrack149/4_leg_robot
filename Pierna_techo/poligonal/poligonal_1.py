@@ -1,12 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-poligonal_1.py (refactorizado con pata_common)
-
-Simulador de trayectoria poligonal (aproximación lineal de la espiral)
-con evasión de obstáculos (bloque). Usa el módulo pata_common para toda
-la cinemática, generación de trayectorias y métricas de error.
-"""
-
 import numpy as np
 import matplotlib
 matplotlib.use('TkAgg')
@@ -27,15 +18,10 @@ from pata_common import (
     calcular_velocidad_aceleracion,
     distancia_a_polilinea,
 )
+LADO = 1                       # pata delantera izquierda
+CADERA = np.array([0.0, 0.0, 0.0])
 
-
-# Parámetros de la pierna (FR)
-
-CADERA_FR = np.array([-0.29785, -0.055, 0.0])   # offset de la cadera en el mundo
-LADO_FR = -1                                    # pata delantera derecha
-
-
-# Trayectoria espiral cónica 
+# Trayectoria espiral cónica
 
 TIPO_TRAYECTORIA = 'espiral'
 
@@ -135,7 +121,7 @@ def segmento_recto_colisiona(p0, p3, muestras=40):
     #Verifica si el segmento recto entre p0 y p3 (coordenadas locales) colisiona con el bloque.
     for u in np.linspace(0.0, 1.0, muestras):
         punto_local = p0 + u*(p3-p0)
-        if punto_dentro_bloque(CADERA_FR + punto_local):
+        if punto_dentro_bloque(CADERA + punto_local):
             return True
     return False
 
@@ -205,11 +191,11 @@ registro = {'historial': [], 'segmentos_reales': []}
 
 def puntos_pata(pos_local):
     #Devuelve las posiciones de las articulaciones en coordenadas del mundo.
-    q = cinematica_inversa(pos_local[0], pos_local[1], pos_local[2], LADO_FR)
+    q = cinematica_inversa(pos_local[0], pos_local[1], pos_local[2], LADO)
     if q is None:
         q = (np.pi/2, 0.0, 0.0)   # pose por defecto
-    pts = cinematica_directa(*q, LADO_FR)
-    return [CADERA_FR + p for p in pts]
+    pts = cinematica_directa(*q, LADO)
+    return [CADERA + p for p in pts]
 
 def iniciar_trayectoria():
     if len(poligonal) < 2:
@@ -217,7 +203,7 @@ def iniciar_trayectoria():
     poli_ordenada = reorganizar_trayectoria(poligonal, estado['actual'])
     registro['historial'].clear()
     registro['segmentos_reales'].clear()
-    segs, verts, bloqueado = preparar_trayectoria_completa_poligonal(poli_ordenada, LADO_FR)
+    segs, verts, bloqueado = preparar_trayectoria_completa_poligonal(poli_ordenada, LADO)
     estado['segmentos'] = segs
     estado['vertices'] = verts
     estado['actual'] = poli_ordenada[0].copy()
@@ -347,7 +333,7 @@ ax.view_init(elev=30, azim=45)
 ax.add_collection3d(cubo)
 
 # Mostrar trayectoria original (waypoints)
-tray_world = np.array([CADERA_FR + p for p in trayectoria])
+tray_world = np.array([CADERA + p for p in trayectoria])
 ax.plot(tray_world[:, 0], tray_world[:, 1], tray_world[:, 2],
         '--', color='dodgerblue', linewidth=1.2, label='Waypoints')
 ax.scatter(tray_world[:, 0], tray_world[:, 1], tray_world[:, 2], color='blue', s=30)
@@ -365,7 +351,7 @@ articulaciones = ax.scatter([O0[0], O1[0], O2[0], O3[0]],
                             [O0[2], O1[2], O2[2], O3[2]],
                             color='red', s=40)
 pie, = ax.plot([O3[0]], [O3[1]], [O3[2]], 'o', color='gold', markersize=10, markeredgecolor='black')
-objetivo_plot, = ax.plot([CADERA_FR[0]], [CADERA_FR[1]], [CADERA_FR[2]],
+objetivo_plot, = ax.plot([CADERA[0]], [CADERA[1]], [CADERA[2]],
                          'x', color='green', markersize=12, markeredgewidth=3)
 
 ax.legend(loc='upper left', fontsize=8)
@@ -408,12 +394,12 @@ def actualizar(frame):
 
     if len(registro['historial']) > 1:
         hist = np.array(registro['historial'])
-        hist_world = CADERA_FR + hist
+        hist_world = CADERA + hist
         linea_seguida.set_data_3d(hist_world[:, 0], hist_world[:, 1], hist_world[:, 2])
 
     if estado['siguiendo'] or estado['terminado']:
         if len(estado['vertices']) > 0:
-            verts_world = np.array([CADERA_FR + v for v in estado['vertices']])
+            verts_world = np.array([CADERA + v for v in estado['vertices']])
             curva_poligonal.set_data_3d(verts_world[:, 0], verts_world[:, 1], verts_world[:, 2])
         curva_poligonal.set_color('red' if estado['segmento_bloqueado'] else 'lime')
     else:

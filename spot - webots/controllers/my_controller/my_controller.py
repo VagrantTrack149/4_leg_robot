@@ -18,9 +18,6 @@ from pata_common import (
     Q1_MIN, Q1_MAX, Q2_MIN, Q2_MAX, Q3_MIN, Q3_MAX,
 )
 
-# ============================================================
-# VARIABLE PARA DESACTIVAR GRÁFICAS EN VIVO (más rápido)
-# ============================================================
 MOSTRAR_EN_VIVO = False   # Cambiar a False para ejecutar sin gráficas en tiempo real
 
 # Tipo de trayectoria base: 'espiral', 'lissajous', 'escalon'

@@ -10,6 +10,8 @@ from pata_common import (
     cinematica_inversa,
     punto_alcanzable,
     generar_espiral,
+    generar_lissajous,
+    generar_escalon,
     reorganizar_trayectoria,
     calcular_errores,
     calcular_velocidad_aceleracion,
@@ -17,21 +19,31 @@ from pata_common import (
     Q1_MIN, Q1_MAX, Q2_MIN, Q2_MAX, Q3_MIN, Q3_MAX,
 )
 
+LADO = 1                       # pata delantera izquierda
+CADERA = np.array([0.0, 0.0, 0.0])
 
-# Parámetros de la pierna (FR)
-CADERA_FR = np.array([0.0, 0.0, 0.0]) 
-#CADERA_FR = np.array([-0.29785, -0.055, 0.0])   # offset de la cadera en el mundo
-LADO_FR = -1                                    # pata delantera derecha
+# Trayectoria espiral cónica
 
+TIPO_TRAYECTORIA = 'espiral'
 
-# Trayectoria espiral cónica (misma que en my_controller.py)
-
-trayectoria = generar_espiral(
-    centro=(0.0, 0.0, -0.3820),
-    R0=0.026, Rf=0.0083,
-    vueltas=3, n_puntos=30,
-    z_ini=-0.360, z_fin=-0.425
-)
+if TIPO_TRAYECTORIA == 'espiral':
+    trayectoria = generar_espiral(
+        centro=(0.0, 0.0, -0.3820),
+        R0=0.026, Rf=0.0083,
+        vueltas=3, n_puntos=30,
+        z_ini=-0.360, z_fin=-0.425
+    )
+elif TIPO_TRAYECTORIA == 'lissajous':
+    trayectoria = generar_lissajous(
+        centro=(0.0, 0.04, -0.38),
+        radio=0.015,
+        frecuencias=(2, 3, 5),
+        n_puntos=100
+    )
+elif TIPO_TRAYECTORIA == 'escalon':
+    trayectoria = generar_escalon()
+else:
+    raise ValueError("TIPO_TRAYECTORIA no válido. Usa 'espiral', 'lissajous' o 'escalon'.")
 
 
 # Estado y registro
@@ -56,16 +68,16 @@ registro = {
 }
 
 
-# Funciones auxiliares (usan pata_common)
+# Funciones auxiliares
 
 def puntos_pata(pos_local):
     #devuelve las posiciones de las articulaciones en coordenadas del mundo.
-    q = cinematica_inversa(pos_local[0], pos_local[1], pos_local[2], LADO_FR)
+    q = cinematica_inversa(pos_local[0], pos_local[1], pos_local[2], LADO)
     if q is None:
         # Si no es alcanzable, devolvemos una pose por defecto (vertical), despues cambiaremos esto espero... :/
         q = (np.pi/2, 0.0, 0.0)
-    pts_locales = cinematica_directa(*q, LADO_FR)
-    return [CADERA_FR + p for p in pts_locales]
+    pts_locales = cinematica_directa(*q, LADO)
+    return [CADERA + p for p in pts_locales]
 
 
 # Configuración de la figura 3D
@@ -82,7 +94,7 @@ ax.set_box_aspect([1,1,1])
 ax.view_init(elev=30, azim=45)
 
 # Trayectoria planeada (coordenadas mundo)
-tray_world = np.array([CADERA_FR + p for p in trayectoria])
+tray_world = np.array([CADERA + p for p in trayectoria])
 ax.plot(tray_world[:, 0], tray_world[:, 1], tray_world[:, 2],
         '--', color='dodgerblue', linewidth=1.2, label='Trayectoria planeada')
 ax.scatter(tray_world[:, 0], tray_world[:, 1], tray_world[:, 2],
@@ -102,7 +114,7 @@ articulaciones = ax.scatter([O0[0], O1[0], O2[0], O3[0]],
                             color='red', s=40)
 pie, = ax.plot([O3[0]], [O3[1]], [O3[2]], 'o', color='gold',
                markersize=10, markeredgecolor='black', label='Pie')
-objetivo_plot, = ax.plot([CADERA_FR[0]], [CADERA_FR[1]], [CADERA_FR[2]],
+objetivo_plot, = ax.plot([CADERA[0]], [CADERA[1]], [CADERA[2]],
                          'x', color='green', markersize=12, markeredgewidth=3,
                          label='Objetivo')
 ax.legend(loc='upper left', fontsize=8)
@@ -111,8 +123,8 @@ texto_estado = fig.text(0.02, 0.95, "", fontsize=9, family='monospace', va='top'
 
 def actualizar_marcador_objetivo():
     x, y, z = estado['objetivo']
-    objetivo_plot.set_data_3d([CADERA_FR[0] + x], [CADERA_FR[1] + y],
-                              [CADERA_FR[2] + z])
+    objetivo_plot.set_data_3d([CADERA[0] + x], [CADERA[1] + y],
+                              [CADERA[2] + z])
 
 
 # Función para iniciar la ruta
@@ -122,7 +134,7 @@ def iniciar_trayectoria():
         return
     trayectoria_ordenada = reorganizar_trayectoria(trayectoria, estado['actual'])
     # Filtrar puntos alcanzables
-    puntos_validos = [p for p in trayectoria_ordenada if punto_alcanzable(p, LADO_FR)]
+    puntos_validos = [p for p in trayectoria_ordenada if punto_alcanzable(p, LADO)]
     descartados = len(trayectoria_ordenada) - len(puntos_validos)
     if descartados > 0:
         print(f"Aviso: se descartaron {descartados} punto(s) de la trayectoria "
@@ -151,7 +163,6 @@ boton.on_clicked(lambda event: iniciar_trayectoria())
 def mostrar_reporte_error():
     if len(registro['historial_actual']) == 0:
         return
-    # Referencia: la trayectoria original (sin offset de cadera)
     referencia = np.array(trayectoria)
     errores, rmse = calcular_errores(registro['historial_actual'], referencia)
     velocidad, aceleracion = calcular_velocidad_aceleracion(registro['historial_actual'], dt=0.02)
@@ -196,7 +207,7 @@ def actualizar(frame):
         distancia = np.linalg.norm(estado['objetivo'] - estado['actual'])
         if distancia < estado['tolerancia']:
             # Verificar si el punto alcanzado está dentro de límites (para registro)
-            alcanzable = punto_alcanzable(estado['actual'], LADO_FR)
+            alcanzable = punto_alcanzable(estado['actual'], LADO)
             registro['puntos_alcanzados'].append(estado['actual'].copy())
             registro['indices_alcanzados'].append(estado['indice_actual'])
             registro['fuera_de_alcance'].append(not alcanzable)
@@ -214,7 +225,7 @@ def actualizar(frame):
     # Actualizar visualización de la pata
     O0, O1, O2, O3 = puntos_pata(estado['actual'])
     # Color según alcanzabilidad
-    dentro = punto_alcanzable(estado['actual'], LADO_FR)
+    dentro = punto_alcanzable(estado['actual'], LADO)
     color = 'red' if dentro else 'orange'
     l01.set_color(color)
     l12.set_color(color)
@@ -231,7 +242,7 @@ def actualizar(frame):
     # Actualizar trayectoria real
     if len(registro['historial_actual']) > 1:
         hist = np.array(registro['historial_actual'])
-        hist_world = CADERA_FR + hist
+        hist_world = CADERA + hist
         linea_seguida.set_data_3d(hist_world[:, 0], hist_world[:, 1], hist_world[:, 2])
 
     # Texto de estado

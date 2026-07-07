@@ -5,7 +5,7 @@ sceneTreePerspectives: 000000ff00000001000000030000001e000000c0000000fa010000000
 maximizedDockId: -1
 centralWidgetVisible: 1
 orthographicViewHeight: 1
-textFiles: 2 "controllers/spot_moving_demo/spot_moving_demo.c" "controllers/Spot_controller_creo/Spot_controller_creo.py" "controllers/my_controller/my_controller.py" "controllers/prueba_otra_vez/prueba_otra_vez.py" "controllers/bezier_prueba/bezier_prueba.py" "controllers/prueba_con_esclavos/prueba_con_esclavos.py"
+textFiles: 2 "controllers/spot_moving_demo/spot_moving_demo.c" "controllers/Spot_controller_creo/Spot_controller_creo.py" "controllers/my_controller/my_controller.py"
 consoles: Console:All:All
 renderingDevicePerspectives: Spot:left flank camera;1;0.0444444;0;0
 renderingDevicePerspectives: Spot:left head camera;1;0.0444444;0;0
