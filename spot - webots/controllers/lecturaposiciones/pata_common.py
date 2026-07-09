@@ -1,62 +1,53 @@
 # CODIGO AUXILIAR PARA FUNCIONES DE CINEMATICA, TRAZADO DE CURVAS Y METRICAS DE ERROR
-# Modelo Spot oficial - Boston Dynamics
 # Referencia: https://harunkurtdev.github.io/webots-simulink/examples/spot-quadruped/
 
 import math
 import numpy as np
 
-# -------------------------------------------------------------------
-# Parámetros geométricos del Spot (modelo oficial)
-# -------------------------------------------------------------------
-L_hip = 0.08           # Hip offset (abducción) [m]
+
+# Parámetros geométricos del Spot
+L_hip = 0.08           # Cadera offset (abducción) [m]
 L_thigh = 0.34         # Thigh length (fémur) [m]
 L_calf = 0.35          # Calf length (tibia) [m]
 
-# -------------------------------------------------------------------
-# Límites reales de los motores (rad) - Webots Spot
-# -------------------------------------------------------------------
-Q1_MIN, Q1_MAX = -0.6, 0.5      # Hip abduction
-Q2_MIN, Q2_MAX = -1.7, 1.7      # Hip flexion
-Q3_MIN, Q3_MAX = -0.45, 1.6     # Knee/Elbow flexion
+# Límites reales de los motores (rad)
+Q1_MIN, Q1_MAX = -0.6, 0.5      # Cadera abduction
+Q2_MIN, Q2_MAX = -1.7, 1.7      # Cadera flexion
+Q3_MIN, Q3_MAX = -0.45, 1.6     # codo flexion
 
-# -------------------------------------------------------------------
+
 # Conversión ángulos internos -> ángulos de motor
-# -------------------------------------------------------------------
+#esta función es innecesaria xd 
+#tengo que quitarla luego, ahora ya funciona mejorcito
 def interno_a_motor(q1, q2, q3):
-    """Convierte ángulos internos de la cinemática a ángulos de motor.
-    En este modelo, los ángulos internos ya son los ángulos de motor."""
     return q1, q2, q3
 
+# CINEMÁTICA DIRECTA
+#usada para la animación de los wireframe pero no para webots
 
-# ===================================================================
-# CINEMÁTICA DIRECTA - Modelo Spot
-# ===================================================================
 def cinematica_directa(q1, q2, q3, lado=1):
     """
-    Forward kinematics for Spot leg
-    
-    q1 : hip abduction angle [rad]
-    q2 : hip flexion angle [rad]
-    q3 : knee flexion angle [rad]
+    q1 : cadera abduction angulo [rad]
+    q2 : cadera flexion angulo [rad]
+    q3 : knee flexion angulo [rad]
     lado : 1 para pata izquierda (FL, RL), -1 para derecha (FR, RR)
-    
-    Returns: O0 (hip), O1 (hip actual), O2 (knee), O3 (foot)
+    Returns: O0 (cadera), O1 (cadera actual), O2 (knee), O3 (foot)
     """
     # Hip position (abduction offset)
     c1 = math.cos(q1)
     s1 = math.sin(q1)
     
-    O0 = np.array([0.0, 0.0, 0.0])  # Hip frame origin
-    O1 = np.array([0.0, lado * L_hip * c1, -L_hip * s1])  # Hip joint position
+    O0 = np.array([0.0, 0.0, 0.0])  # Cadera frame origin
+    O1 = np.array([0.0, lado * L_hip * c1, -L_hip * s1])  # Cadera joint position
     
-    # Thigh segment (from hip flexion angle)
+    # Thigh segment (from cadera flexion angulo)
     c2 = math.cos(q2)
     s2 = math.sin(q2)
     
     O2 = O1 + np.array([L_thigh * s2, 0.0, -L_thigh * c2])
     
-    # Calf segment (from knee flexion angle)
-    # q2 + q3 is the total angle from vertical for the calf
+    # Calf segment (from codo flexion angulo)
+    # q2 + q3 is the total angulo from vertical for the calf
     c23 = math.cos(q2 + q3)
     s23 = math.sin(q2 + q3)
     
@@ -65,33 +56,30 @@ def cinematica_directa(q1, q2, q3, lado=1):
     return O0, O1, O2, O3
 
 
-# ===================================================================
+
 # CINEMÁTICA INVERSA - Modelo Spot
-# ===================================================================
+
 def cinematica_inversa(px, py, pz, lado):
     """
-    Inverse kinematics for Spot leg
-    
-    px, py, pz : foot position in hip frame [m]
+    px, py, pz : posicion del pie en el marco de trabajo de la cadera [m]
     lado : 1 para pata izquierda (FL, RL), -1 para derecha (FR, RR)
-    
     Returns: (q1, q2, q3) in radians, or None if unreachable
     """
     
-    # Step 1: Hip abduction angle (q1)
-    # Position relative to hip: subtract hip offset
+    #  Cadera abduction angulo (q1)
+    # Position relative to cadera: subtract cadera offset
     y_rel = py - lado * L_hip
     z_rel = pz
     
-    # Hip abduction: q1 = atan2(y, -z)
+    # Cadera abduction: q1 = atan2(y, -z)
     q1 = math.atan2(y_rel, -z_rel)
     
-    # Step 2: Distance calculations in sagittal plane
-    # After hip rotation, position in the sagittal plane
+    # distancia del plano sagital (xz) al pie
+    # After cadera rotation, position in the sagittal plane
     L = math.sqrt(y_rel**2 + z_rel**2)
     d = math.sqrt(px**2 + L**2)
     
-    # Step 3: Knee angle (q3) using law of cosines
+    #  Codo angulo (q3) usando ley de cosenos
     # d² = L_thigh² + L_calf² - 2*L_thigh*L_calf*cos(π - q3)
     # cos(π - q3) = -cos(q3)
     cos_knee = (L_thigh**2 + L_calf**2 - d**2) / (2.0 * L_thigh * L_calf)
@@ -100,18 +88,18 @@ def cinematica_inversa(px, py, pz, lado):
     # q3 = π - arccos(cos_knee)
     q3 = math.pi - math.acos(cos_knee)
     
-    # Step 4: Hip flexion angle (q2)
-    # Two components: alpha (direction to foot) and beta (knee angle influence)
+    #  Cadera flexion angulo (q2)
+    # 2 componentes: alpha (direccion pie) and beta (influencia del codo)
     alpha = math.atan2(px, L)
     
-    # Using law of cosines for the angle at thigh:
+    # usando ley de cosenos for the angulo at thigh:
     cos_thigh = (L_thigh**2 + d**2 - L_calf**2) / (2.0 * L_thigh * d)
     cos_thigh = max(-1.0, min(1.0, cos_thigh))
     beta = math.acos(cos_thigh)
     
     q2 = alpha + beta
     
-    # Verify within motor limits
+    # Verificar limites
     q1_m, q2_m, q3_m = interno_a_motor(q1, q2, q3)
     if not (Q1_MIN <= q1_m <= Q1_MAX and
             Q2_MIN <= q2_m <= Q2_MAX and
@@ -122,24 +110,14 @@ def cinematica_inversa(px, py, pz, lado):
 
 
 def punto_alcanzable(p, lado):
-    """Verifica si un punto en el espacio Cartesiano es alcanzable por la pata."""
+    #Verifica si un punto en el espacio Cartesiano es alcanzable por la pata
     return cinematica_inversa(p[0], p[1], p[2], lado) is not None
 
 
-# ===================================================================
+
 # GENERADORES DE TRAYECTORIAS
-# ===================================================================
+
 def generar_espiral(centro, R0, Rf, vueltas, n_puntos, z_ini, z_fin):
-    """
-    Genera una trayectoria en espiral.
-    
-    centro : [x, y, z] centro de la espiral
-    R0 : radio inicial [m]
-    Rf : radio final [m]
-    vueltas : número de vueltas
-    n_puntos : número de puntos
-    z_ini, z_fin : rango en Z
-    """
     puntos = []
     for i in range(n_puntos):
         t = i / (n_puntos - 1) if n_puntos > 1 else 0
@@ -151,16 +129,7 @@ def generar_espiral(centro, R0, Rf, vueltas, n_puntos, z_ini, z_fin):
         puntos.append(np.array([x, y, z]))
     return puntos
 
-def generar_lissajous(centro=(0.0, 0.0, -0.4), radio=0.05,
-                      frecuencias=(2, 3, 5), n_puntos=150):
-    """
-    Genera una trayectoria de Lissajous.
-    
-    centro : [x, y, z] centro de la figura
-    radio : amplitud [m]
-    frecuencias : (fx, fy, fz) frecuencias de cada eje
-    n_puntos : número de puntos
-    """
+def generar_lissajous(centro=(0.0, 0.0, -0.4), radio=0.05, frecuencias=(2, 3, 5), n_puntos=150):
     puntos = []
     for t in np.linspace(0, 2*np.pi, n_puntos, endpoint=False):
         x = centro[0] + radio * np.cos(frecuencias[0] * t)
@@ -170,16 +139,15 @@ def generar_lissajous(centro=(0.0, 0.0, -0.4), radio=0.05,
     return puntos
 
 def generar_escalon():
-    """Genera una trayectoria de escalón simple."""
     puntos = []
     puntos.append(np.array([0.15, 0.0, -0.55]))
     puntos.append(np.array([-0.15, 0.0, -0.45]))
     return puntos
 
 
-# ===================================================================
-# CURVAS DE BÉZIER (sin cambios)
-# ===================================================================
+
+# CURVAS DE BÉZIER
+
 def bezier_cubico(p0, p1, p2, p3, t):
     u = 1.0 - t
     return u**3 * p0 + 3*u**2*t * p1 + 3*u*t**2 * p2 + t**3 * p3
@@ -250,9 +218,8 @@ def reorganizar_trayectoria(puntos, pos_inicial):
     return [p for p in puntos_arr]
 
 
-# ===================================================================
-# MÉTRICAS DE ERROR (sin cambios)
-# ===================================================================
+
+# MÉTRICAS DE ERROR
 def distancia_punto_segmento(P, A, B):
     AB = B - A
     AP = P - A
