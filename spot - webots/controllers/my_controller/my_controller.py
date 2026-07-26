@@ -124,7 +124,7 @@ DRAW_EVERY = 5
 
 # DEFINICIÓN DE TRAYECTORIAS
 
-TIPO = 'lissajous' #  'escalon', 'lissajous' o 'espiral'
+TIPO = 'n' #  'escalon', 'lissajous' o 'espiral'
 
 def obtener_punto(t, tipo, lado):
     # Parámetros base
