@@ -315,6 +315,21 @@ void ejecutar_ga(const String& tipo) {
     Serial.printf("   Tiempo total: %.2f s\n", t_ejecucion);
     Serial.printf("   RMSE final: %.3f\n", mejor_global.rmse);
     Serial.printf("   Fitness final: %.3f\n", mejor_global.fitness);
+
+    // EXTRACCIÓN Y MUESTREO DE PUNTOS PARA GRAFICAR 
+    std::vector<Punto3D> pts_mejor(N_PUNTOS);
+    for (int i = 0; i < N_PUNTOS; ++i) {
+        pts_mejor[i] = {mejor_global.genes[i * 3], mejor_global.genes[i * 3 + 1], mejor_global.genes[i * 3 + 2]};
+    }
+    // Ordenar los puntos según la trayectoria de referencia para que el gráfico no se cruce
+    std::vector<Punto3D> pts_ordenados = ordenamiento_dinamico(pts_mejor, trayectoria_ref);
+
+    Serial.println("---BEGIN_POINTS:" + tipo + "---");
+    Serial.println("x,y,z");
+    for (const auto& p : pts_ordenados) {
+        Serial.printf("%.2f,%.2f,%.2f\n", p.x , p.y , p.z );
+    }
+    Serial.println("---END_POINTS---");
 }
 
 
@@ -328,7 +343,7 @@ void setup() {
 
     // Inicializar Semilla Aleatoria
     srand(micros());
-    Serial.println("   ALGORITMO GENÉTICO EN ESP32-S3  ");
+    Serial.println("   ALGORITMO GENÉTICO EN ESP32-S3   ");
 
     for (const auto& tray : TRAYECTORIAS) {
         ejecutar_ga(tray);
