@@ -28,7 +28,7 @@ const float FACTOR_UMBRAL_SEPARACION = 2.5f;
 const float MARGEN_CAJA_LOCAL = 15.0f;
 
 const int N_PUNTOS_REF = 300;
-const int N_PUNTOS = 10;
+const int N_PUNTOS = 20;
 const int POP_SIZE = 300;
 const int GENERACIONES = 600;
 
