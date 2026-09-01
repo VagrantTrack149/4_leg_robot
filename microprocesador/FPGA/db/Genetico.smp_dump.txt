@@ -1,0 +1,13 @@
+
+State Machine - |ga_top_wrapper|ga_engine_top:u_ga_core|state
+Name state.STATE_FINISHED state.STATE_NEXT_GEN state.STATE_MUTATION state.STATE_CROSS_LOOP state.STATE_CROSS_INIT state.STATE_EVAL_STORE state.STATE_EVAL_LOOP state.STATE_EVAL_INIT state.STATE_INIT_POP state.STATE_IDLE 
+state.STATE_IDLE 0 0 0 0 0 0 0 0 0 0 
+state.STATE_INIT_POP 0 0 0 0 0 0 0 0 1 1 
+state.STATE_EVAL_INIT 0 0 0 0 0 0 0 1 0 1 
+state.STATE_EVAL_LOOP 0 0 0 0 0 0 1 0 0 1 
+state.STATE_EVAL_STORE 0 0 0 0 0 1 0 0 0 1 
+state.STATE_CROSS_INIT 0 0 0 0 1 0 0 0 0 1 
+state.STATE_CROSS_LOOP 0 0 0 1 0 0 0 0 0 1 
+state.STATE_MUTATION 0 0 1 0 0 0 0 0 0 1 
+state.STATE_NEXT_GEN 0 1 0 0 0 0 0 0 0 1 
+state.STATE_FINISHED 1 0 0 0 0 0 0 0 0 1 

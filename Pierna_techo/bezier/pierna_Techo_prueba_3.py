@@ -19,12 +19,13 @@ from pata_common import (
     calcular_errores,
     calcular_velocidad_aceleracion,
     generar_bezier_completa,
+    a1,
 )
 
-# -------------------------------------------------------------------
+
 # Configuración de la trayectoria
-# -------------------------------------------------------------------
-TIPO_TRAYECTORIA = 'escalon'   # Opciones: 'espiral', 'lissajous', 'escalon'
+
+TIPO_TRAYECTORIA = 'escalon'   # 'espiral', 'lissajous', 'escalon'
 
 if TIPO_TRAYECTORIA == 'espiral':
     trayectoria = generar_espiral(
@@ -45,17 +46,39 @@ elif TIPO_TRAYECTORIA == 'escalon':
 else:
     raise ValueError("TIPO_TRAYECTORIA no válido.")
 
-# -------------------------------------------------------------------
-# Parámetros de la pata (FL)
-# -------------------------------------------------------------------
-LADO = 1                       # pata delantera izquierda
+
+# Parámetros de las 4 patas (mismo diccionario LADO que my_controller.py)
+
+LADO = 1                       # pata delantera izquierda (FL) -> la que sigue la trayectoria
 CADERA = np.array([0.0, 0.0, 0.0])
 DT = 0.02                      # paso de tiempo (s)
 DURACION_SEGMENTO = 0.3        # duración de cada segmento Bézier (s)
 
-# -------------------------------------------------------------------
+# Mismo signo por pata que LADO en my_controller.py:
+#   LADO = {'RR': -1, 'RL': 1, 'FR': -1, 'FL': 1}
+LADOS = {'RR': -1, 'RL': 1, 'FR': -1, 'FL': 1}
+
+# Anclaje al cuerpo de cada pata, se le da un offset en X
+# a las traseras respecto a las delanteras. FL se deja exactamente en
+# CADERA (el origen original del script, sin tocar su comportamiento);
+# el offset lateral (Y) ya lo maneja a1 dentro de la cinemática, igual
+# que en my_controller.py, así que FL y FR comparten el mismo anclaje
+# delantero, y RL/RR comparten el mismo anclaje trasero.
+SEPARACION_DELANTERA_TRASERA = -0.30
+CADERAS = {
+    'FL': CADERA,
+    'FR': CADERA,
+    'RL': CADERA + np.array([-SEPARACION_DELANTERA_TRASERA, 0.0, 0.0]),
+    'RR': CADERA + np.array([-SEPARACION_DELANTERA_TRASERA, 0.0, 0.0]),
+}
+
+ALTURA_NEUTRA = -0.38
+
+PATAS_ESTATICAS = ['FR', 'RL', 'RR']
+
+
 # Filtrado de puntos alcanzables
-# -------------------------------------------------------------------
+
 def reporte_alcanzabilidad(puntos, lado):
     total = len(puntos)
     alcanzables = 0
@@ -73,9 +96,9 @@ if alcanzables < 2:
 
 trayectoria_valida = [p for p in trayectoria if punto_alcanzable(p, LADO)]
 
-# -------------------------------------------------------------------
+
 # Estado y registro
-# -------------------------------------------------------------------
+
 estado = {
     'actual': trayectoria_valida[0].copy(),
     't_segmento': 0.0,
@@ -86,14 +109,19 @@ estado = {
 }
 registro = {'historial': []}
 
-def puntos_pata(pos):
-    """Devuelve las coordenadas de las articulaciones para una posición del pie."""
-    q = cinematica_inversa(pos[0], pos[1], pos[2], LADO)
+def puntos_pata(pos, lado=LADO, cadera=CADERA):
+    q = cinematica_inversa(pos[0], pos[1], pos[2], lado)
     if q is None:
         # Si momentáneamente no es alcanzable, se mantiene la última pose válida
         q = (0.0, 0.0, 0.0)  # postura neutra
-    pts = cinematica_directa(*q, LADO)
-    return [CADERA + p for p in pts]
+    pts = cinematica_directa(*q, lado)
+    return [cadera + p for p in pts]
+
+
+def postura_neutra(pata):
+    lado = LADOS[pata]
+    px, py, pz = 0.0, lado * a1, ALTURA_NEUTRA
+    return puntos_pata((px, py, pz), lado=lado, cadera=CADERAS[pata])
 
 def iniciar_trayectoria():
     if len(trayectoria_valida) < 2:
@@ -156,12 +184,12 @@ def mostrar_reporte_error():
     fig2.tight_layout()
     plt.show()
 
-# -------------------------------------------------------------------
+
 # Figura y animación
-# -------------------------------------------------------------------
+
 fig = plt.figure(figsize=(12, 8))
 ax = fig.add_subplot(111, projection='3d')
-ax.set_title("Simulador de pata FL - seguimiento Bézier")
+ax.set_title("Simulador de robot (4 patas) - FL sigue Bézier, resto en reposo")
 ax.set_xlabel("X (m)")
 ax.set_ylabel("Y (m)")
 ax.set_zlabel("Z (m)")
@@ -200,6 +228,19 @@ articulaciones = ax.scatter([O0[0], O1[0], O2[0], O3[0]],
                             color='orange', s=50)
 pie, = ax.plot([O3[0]], [O3[1]], [O3[2]], 'o', color='gold',
                markersize=10, markeredgecolor='black', label='Pie')
+
+# Patas estáticas (FR, RL, RR):
+# se calculan una sola vez en su postura neutra y no se vuelven a tocar
+# en cada frame (ahí sí se recalculaba cada iteración del while, pero al
+# ser un valor fijo el resultado siempre es el mismo, así que aquí basta
+# con dibujarlas una vez fuera de actualizar())
+for _pata in PATAS_ESTATICAS:
+    _O0, _O1, _O2, _O3 = postura_neutra(_pata)
+    ax.plot([_O0[0], _O1[0], _O2[0], _O3[0]],
+            [_O0[1], _O1[1], _O2[1], _O3[1]],
+            [_O0[2], _O1[2], _O2[2], _O3[2]],
+            color='gray', lw=3, alpha=0.6)
+    ax.scatter([_O3[0]], [_O3[1]], [_O3[2]], color='gray', s=40, alpha=0.6)
 
 ax.legend(loc='upper left', fontsize=8)
 texto_estado = fig.text(0.02, 0.95, "", fontsize=9, family='monospace', va='top')

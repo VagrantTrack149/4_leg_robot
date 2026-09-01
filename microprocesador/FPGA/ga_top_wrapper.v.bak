@@ -1,0 +1,50 @@
+module ga_top_wrapper #(
+    parameter GENES_PER_IND = 30,
+    parameter POP_SIZE      = 16,
+    parameter MAX_GENS      = 100
+)(ga_top_wrapper
+    input  wire        CLOCK_50,   // Reloj de 50 MHz de la DE1-SoC
+    input  wire [0:0]  KEY,        // KEY[0] como Reset
+    input  wire [1:0]  SW,         // SW[0] Start, SW[1] LFSR Enable
+    output wire [9:0]  LEDR,       // Visualización del estado en LEDs
+    output wire [6:0]  HEX0,       // Muestra estado / completado
+    output wire [31:0] best_fit_out
+);
+
+    wire rst = ~KEY[0]; // Botones en DE1-SoC son activos en bajo
+    wire start = SW[0];
+    wire lfsr_en = SW[1] | start;
+
+    wire [31:0] rnd_val;
+    wire        done_sig;
+    wire [15:0] current_gen_sig;
+    wire [31:0] best_fitness_sig;
+
+    // Instancia del Generador Aleatorio LFSR
+    lfsr_32 u_lfsr (
+        .clk   (CLOCK_50),
+        .rst   (rst),
+        .enable(lfsr_en),
+        .rnd   (rnd_val)
+    );
+
+    // Instancia del Núcleo Principal del Algoritmo Genético
+    ga_engine_top #(
+        .GENES_PER_IND(GENES_PER_IND),
+        .POP_SIZE     (POP_SIZE),
+        .MAX_GENS     (MAX_GENS)
+    ) u_ga_core (
+        .clk          (CLOCK_50),
+        .rst          (rst),
+        .start        (start),
+        .done         (done_sig),
+        .current_gen  (current_gen_sig),
+        .best_fitness (best_fitness_sig)
+    );
+
+    // Asignación de Monitoreo Físico
+    assign LEDR[0]   = done_sig;
+    assign LEDR[9:1] = current_gen_sig[8:0];
+    assign best_fit_out = best_fitness_sig;
+
+endmodule

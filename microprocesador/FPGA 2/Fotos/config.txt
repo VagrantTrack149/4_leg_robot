@@ -1,0 +1,3 @@
+POP=32
+max gen=200
+Número de referencia=300

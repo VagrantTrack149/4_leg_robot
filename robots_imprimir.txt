@@ -1,0 +1,48 @@
+Modelo a imprimir:
+https://www.thingiverse.com/thing:3445283
+Modelo a imprimir 2:
+https://www.thingiverse.com/thing:4155673
+Modelo a imprimir 3:
+https://www.thingiverse.com/thing:3761340
+
+Referencia de codigo:
+https://github.com/avbotics/Spot-Micro-Control-and-Animation
+Referencia codigo 2:
+https://github.com/michaelkubina/SpotMicroESP32
+
+Referencia video:
+https://www.youtube.com/watch?v=oqUjJDkn_ZA
+
+
+materiales 1:
+-Raspberry Pi 4
+-PCA9685 shield (I2c) modified in order to separate servos power supply (6V) and 5V logic supply
+-12 x 30 kg.cm servos
+-MPU 6050 (I2c) IMU
+-ADS 1015 (I2c) for voltage measurement (with a simpe resistors voltage divider)
+-2x16 characters LCD display (I2c)
+-2 HC-SR04 untrasonic range sensors
+-20 A SBEC supply (servos) set at 6V
+-5 A SBEC supply for the RPi and shields logic circuits
+-2S 4000 mAh LiPo Battery
+
+materiales 2:
+Electronics
+12 × MG 996 R servo motor
+1 × Arduino Mega
+2 × HC-SR04 Ultrasonic sensor
+1 × HC-06 Bluetooth module
+1 × MPU-6050 Gyro sensor
+1 × I2C 16x2 LCD Module
+1 × Rleil rocker switch RL3-4
+7.4v Battery
+
+Screws, Nuts and Bearings
+8 × 'M5×15'
+40 × 'M4×20'
+8 × 'M4×15'
+48 × 'M4 nut'
+4 × 'M3×20'
+28 × 'M3×10'
+16 × 'M3 nut'
+8 × 'F625zz Flange ball bearing'

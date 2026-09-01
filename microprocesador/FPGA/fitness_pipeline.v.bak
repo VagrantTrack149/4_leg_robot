@@ -1,0 +1,25 @@
+module fitness_pipeline (
+    input  wire        clk,
+    input  wire        rst,
+    input  wire signed [15:0] gene_in,
+    input  wire signed [15:0] ref_in,
+    output reg  [31:0] acc_out
+);
+    reg signed [16:0] diff_reg;
+    reg        [31:0] mult_reg;
+
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin
+            diff_reg <= 17'd0;
+            mult_reg <= 32'd0;
+            acc_out  <= 32'd0;
+        end else begin
+            // Etapa 1: Resta (Diferencia)
+            diff_reg <= gene_in - ref_in;
+            // Etapa 2: Elevación al cuadrado (Mapeado a DSP)
+            mult_reg <= diff_reg * diff_reg;
+            // Etapa 3: Acumulador
+            acc_out  <= acc_out + mult_reg;
+        end
+    end
+endmodule

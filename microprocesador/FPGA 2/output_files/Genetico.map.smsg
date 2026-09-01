@@ -1,0 +1,2 @@
+Warning (10268): Verilog HDL information at ga_engine_top.v(222): always construct contains both blocking and non-blocking assignments File: D:/Documentos/robot contro/microprocesador/FPGA 2/ga_engine_top.v Line: 222
+Warning (10268): Verilog HDL information at div_seq.v(33): always construct contains both blocking and non-blocking assignments File: D:/Documentos/robot contro/microprocesador/FPGA 2/div_seq.v Line: 33

@@ -1,0 +1,193 @@
+module ga_engine_top #(
+    parameter GENES_PER_IND = 30,  // 10 puntos 3D (10 x 3 = 30 genes)
+    parameter POP_SIZE      = 16,  // Tamaño de población
+    parameter MAX_GENS      = 100  // Número de generaciones
+)(
+    input  wire        clk,
+    input  wire        rst,
+    input  wire        start,
+    
+    // Salidas de Control y Estado
+    output reg         done,
+    output reg  [15:0] current_gen,
+    output reg  [31:0] best_fitness
+);
+
+    // Definición de Estados de la FSM
+    localparam STATE_IDLE            = 3'd0;
+    localparam STATE_INIT_POP        = 3'd1;
+    localparam STATE_EVAL_FITNESS    = 3'd2;
+    localparam STATE_SELECTION_CROSS = 3'd3;
+    localparam STATE_MUTATION        = 3'd4;
+    localparam STATE_NEXT_GEN        = 3'd5;
+    localparam STATE_FINISHED        = 3'd6;
+
+    reg [2:0] state;
+
+    // Registros de la Población y Fitness
+    // Memoria flattened para simular arreglos 2D
+    reg signed [15:0] population [0:POP_SIZE*GENES_PER_IND - 1];
+    reg        [31:0] fitness    [0:POP_SIZE - 1];
+
+    // Contadores e Índices
+    reg [15:0] gen_count;
+    integer    ind_idx;
+    integer    gene_idx;
+    reg [31:0] min_fitness;
+
+    // Generador Pseudo-Aleatorio (LFSR de 32 bits)
+    reg [31:0] lfsr;
+
+    // Variables temporales para Cálculos Aritméticos
+    reg signed [15:0] diff;
+    reg        [31:0] diff_sq;
+    reg        [31:0] acc_sum;
+    integer    p1_idx, p2_idx;
+
+    // =========================================================================
+    // MÁQUINA DE ESTADOS PRINCIPAL
+    // =========================================================================
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin
+            state       <= STATE_IDLE;
+            gen_count   <= 16'd0;
+            done        <= 1'b0;
+            min_fitness <= 32'hFFFFFFFF;
+            ind_idx     <= 0;
+            gene_idx    <= 0;
+            lfsr        <= 32'hACE12678;
+            current_gen <= 16'd0;
+            best_fitness<= 32'hFFFFFFFF;
+        end else begin
+            
+            // Actualización constante del LFSR (Taps: 32, 22, 2, 1)
+            lfsr <= {lfsr[30:0], lfsr[31] ^ lfsr[21] ^ lfsr[1] ^ lfsr[0]};
+
+            case (state)
+
+                // -------------------------------------------------------------
+                // ESTADO 0: Espera de Inicio
+                // -------------------------------------------------------------
+                STATE_IDLE: begin
+                    done <= 1'b0;
+                    if (start) begin
+                        gen_count   <= 16'd0;
+                        min_fitness <= 32'hFFFFFFFF;
+                        state       <= STATE_INIT_POP;
+                        ind_idx     <= 0;
+                        gene_idx    <= 0;
+                    end
+                end
+
+                // -------------------------------------------------------------
+                // ESTADO 1: Inicializar Población Aleatoria
+                // -------------------------------------------------------------
+                STATE_INIT_POP: begin
+                    population[ind_idx * GENES_PER_IND + gene_idx] <= lfsr[15:0];
+
+                    if (gene_idx == GENES_PER_IND - 1) begin
+                        gene_idx <= 0;
+                        if (ind_idx == POP_SIZE - 1) begin
+                            ind_idx <= 0;
+                            state   <= STATE_EVAL_FITNESS;
+                        end else begin
+                            ind_idx <= ind_idx + 1;
+                        end
+                    end else begin
+                        gene_idx <= gene_idx + 1;
+                    end
+                end
+
+                // -------------------------------------------------------------
+                // ESTADO 2: Evaluación de Fitness
+                // -------------------------------------------------------------
+                STATE_EVAL_FITNESS: begin
+                    acc_sum = 32'd0;
+                    for (gene_idx = 0; gene_idx < GENES_PER_IND; gene_idx = gene_idx + 1) begin
+                        diff = population[ind_idx * GENES_PER_IND + gene_idx];
+                        diff_sq = diff * diff; // Mapeado a Bloque DSP
+                        acc_sum = acc_sum + diff_sq;
+                    end
+
+                    fitness[ind_idx] <= acc_sum;
+
+                    // Registro del Mejor Fitness Global
+                    if (acc_sum < min_fitness) begin
+                        min_fitness <= acc_sum;
+                    end
+
+                    if (ind_idx == POP_SIZE - 1) begin
+                        ind_idx <= 0;
+                        state   <= STATE_SELECTION_CROSS;
+                    end else begin
+                        ind_idx <= ind_idx + 1;
+                    end
+                end
+
+                // -------------------------------------------------------------
+                // ESTADO 3: Selección y Crossover (Cruzamiento)
+                // -------------------------------------------------------------
+                STATE_SELECTION_CROSS: begin
+                    p1_idx = lfsr[3:0] % POP_SIZE;
+                    p2_idx = lfsr[7:4] % POP_SIZE;
+
+                    // Hijo = (Padre1 + Padre2) / 2
+                    for (gene_idx = 0; gene_idx < GENES_PER_IND; gene_idx = gene_idx + 1) begin
+                        population[ind_idx * GENES_PER_IND + gene_idx] <= 
+                            (population[p1_idx * GENES_PER_IND + gene_idx] + 
+                             population[p2_idx * GENES_PER_IND + gene_idx]) >>> 1;
+                    end
+
+                    state <= STATE_MUTATION;
+                end
+
+                // -------------------------------------------------------------
+                // ESTADO 4: Mutación
+                // -------------------------------------------------------------
+                STATE_MUTATION: begin
+                    if (lfsr[1:0] == 2'b11) begin
+                        // Se aplica perturbación con signo al primer gen del individuo
+                        population[ind_idx * GENES_PER_IND] <= 
+                            population[ind_idx * GENES_PER_IND] + $signed(lfsr[7:0]);
+                    end
+
+                    if (ind_idx == POP_SIZE - 1) begin
+                        state <= STATE_NEXT_GEN;
+                    end else begin
+                        ind_idx <= ind_idx + 1;
+                        state   <= STATE_SELECTION_CROSS;
+                    end
+                end
+
+                // -------------------------------------------------------------
+                // ESTADO 5: Bucle Evolutivo
+                // -------------------------------------------------------------
+                STATE_NEXT_GEN: begin
+                    if (gen_count == MAX_GENS - 1) begin
+                        state <= STATE_FINISHED;
+                    end else begin
+                        gen_count <= gen_count + 1'b1;
+                        ind_idx   <= 0;
+                        state     <= STATE_EVAL_FITNESS;
+                    end
+                end
+
+                // -------------------------------------------------------------
+                // ESTADO 6: Fin
+                // -------------------------------------------------------------
+                STATE_FINISHED: begin
+                    done         <= 1'b1;
+                    current_gen  <= gen_count;
+                    best_fitness <= min_fitness;
+                    if (!start) begin
+                        state <= STATE_IDLE;
+                    end
+                end
+
+                default: state <= STATE_IDLE;
+
+            endcase
+        end
+    end
+
+endmodule

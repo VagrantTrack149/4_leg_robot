@@ -1,0 +1,26 @@
+// Módulo combinacional/secuencial para raíz cuadrada entera de 32 bits
+module isqrt32 (
+    input  wire [31:0] rad,
+    output reg  [15:0] root
+);
+    reg [31:0] rem;
+    reg [31:0] root_temp;
+    reg [31:0] q;
+    integer i;
+
+    always @(*) begin
+        rem = 0;
+        root_temp = 0;
+        q = rad;
+        for (i = 0; i < 16; i = i + 1) begin
+            rem = (rem << 2) | ((q >> 30) & 2'b11);
+            q = q << 2;
+            root_temp = root_temp << 1;
+            if (rem >= (root_temp + 1)) begin
+                rem = rem - (root_temp + 1);
+                root_temp = root_temp + 1;
+            end
+        end
+        root = root_temp[15:0];
+    end
+endmodule

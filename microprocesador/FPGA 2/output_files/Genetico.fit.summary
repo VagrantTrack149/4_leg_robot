@@ -1,0 +1,20 @@
+Fitter Status : Successful - Thu Aug 27 13:54:57 2026
+Quartus Prime Version : 20.1.1 Build 720 11/11/2020 SJ Lite Edition
+Revision Name : Genetico
+Top-level Entity Name : ga_top_wrapper
+Family : Cyclone V
+Device : 5CSEMA5F31C6
+Timing Models : Final
+Logic utilization (in ALMs) : 14,452 / 32,070 ( 45 % )
+Total registers : 18564
+Total pins : 90 / 457 ( 20 % )
+Total virtual pins : 0
+Total block memory bits : 58,624 / 4,065,280 ( 1 % )
+Total RAM Blocks : 11 / 397 ( 3 % )
+Total DSP Blocks : 11 / 87 ( 13 % )
+Total HSSI RX PCSs : 0
+Total HSSI PMA RX Deserializers : 0
+Total HSSI TX PCSs : 0
+Total HSSI PMA TX Serializers : 0
+Total PLLs : 0 / 6 ( 0 % )
+Total DLLs : 0 / 4 ( 0 % )
