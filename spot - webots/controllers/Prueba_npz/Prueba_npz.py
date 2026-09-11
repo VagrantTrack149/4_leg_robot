@@ -3,17 +3,22 @@
 from controller import Supervisor
 import math
 import sys
+import os
 import numpy as np
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D 
+from mpl_toolkits.mplot3d import Axes3D
 
 TIME_STEP = 32
 N_PUNTOS = 100
 N_REF_RMSE = 20
-FACTOR_ESCALA = 40.0             # amplitud de la trayectoria del pie, en mm
-TIPO_TRAYECTORIA = 'circulo'   # 'lissajous' 'helice'  'circulo'  'espiral' 
+TIPO_TRAYECTORIA = 'npz'         # 'lissajous', 'helice', 'circulo', 'espiral', 'npz'
 PAUSA_GRAFICO = 0.001            # segundos que matplotlib cede al event loop en cada paso
 PASOS_ASENTAMIENTO = 4           # pasos de simulacion extra para que los motores lleguen al objetivo
+
+#  Configuracion para trayectorias leidas desde .npz 
+NPZ_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         "espiral_p50_g750_pop600_rep0.npz")
+ESCALA_NPZ = 1e-4   # factor de escala para convertir la trayectoria leida a metros
 
 
 # Clases para el manejo de las patas
@@ -45,7 +50,7 @@ class SpotLeg:
         for key, name in sensor_names.items():
             sensor = robot.getDevice(name)
             if sensor is None:
-                print(f"ADVERTENCIA: No se encontro el sensor '{name}' para {leg_name}")
+                print(f"No se encontro el sensor '{name}' para {leg_name}")
                 continue
             sensor.enable(TIME_STEP)
             self.sensors[key] = sensor
@@ -97,7 +102,6 @@ class SpotRobot:
         return {name: leg.get_sensor_values() for name, leg in self.legs.items()}
 
 
-
 # Transformaciones homogeneas
 def Rx(a):
     c, s = math.cos(a), math.sin(a)
@@ -133,7 +137,6 @@ def rot3_from_axis_angle(axis, angle):
     ])
 
 
-
 # Cinematica directa de una pata
 D1 = 0.0528
 D1_Y = 0.0006
@@ -143,7 +146,6 @@ FEMUR_Y = -0.319729
 FEMUR_Z = 0.182338
 FOOT_OFFSET = np.array([0.001038, -0.271321, -0.225038])
 
-#Cinematica directa para el wireframe
 def cinematica_directa(q1, q2, q3, left=True, puntos_intermedios=False):
     """FK de una pata. q1: abduccion (eje Z). q2: cadera (eje X).
     q3: rodilla (eje X). Devuelve la posicion del pie en el marco °°°°°LOCAL°°°°°
@@ -165,7 +167,7 @@ def cinematica_directa(q1, q2, q3, left=True, puntos_intermedios=False):
     p_rodilla = T_rodilla @ np.array([0.0, 0.0, 0.0, 1.0])
     return p_hombro[:3], p_rodilla[:3], p_pie[:3]
 
-#Cinematica inversa para webots
+
 def cinematica_inversa(target_pos, q_init, left=True, max_iter=100, tol=1e-4):
     q = np.array(q_init, dtype=float)
     for _ in range(max_iter):
@@ -191,9 +193,7 @@ def cinematica_inversa(target_pos, q_init, left=True, max_iter=100, tol=1e-4):
     return q
 
 
-
 # Montaje real de cada pata al cuerpo
-
 MOUNT_AXIS = (0.577350, -0.577354, -0.577346)
 MOUNT_ANGLE = 2.094389
 MOUNT_ROTATION = rot3_from_axis_angle(MOUNT_AXIS, MOUNT_ANGLE)
@@ -212,49 +212,68 @@ COLORES_RGB = {'front left': (0, 0, 1), 'front right': (1, 0, 0),
 
 
 def a_marco_cuerpo(p_local, leg_name):
-    #Convierte un punto del marco LOCAL de la pata al marco del cuerpo (X=avance, Y=lateral izq+, Z=vertical arriba+).
     return MOUNT_TRANSLATION[leg_name] + MOUNT_ROTATION @ p_local
 
 
+#  Lector integrado de archivos .npz 
+def cargar_ruta_resultante_npz(npz_path, n_puntos=100):
+    data = np.load(npz_path)
+    ##### para recortados usar vertices_recortados
+    if 'vertices_opt' in data: #trayectoria_ref
+        ruta = data['vertices_opt']
+    else:
+        key = data.files[0]
+        ruta = data[key]
+    
+    # Redimensionar o interpolar al número de puntos deseado si no existen
+    if ruta.shape[0] != n_puntos:
+        indices_originales = np.linspace(0, ruta.shape[0] - 1, ruta.shape[0])
+        indices_nuevos = np.linspace(0, ruta.shape[0] - 1, n_puntos)
+        ruta_interpolada = np.column_stack([
+            np.interp(indices_nuevos, indices_originales, ruta[:, 0]),
+            np.interp(indices_nuevos, indices_originales, ruta[:, 1]),
+            np.interp(indices_nuevos, indices_originales, ruta[:, 2])
+        ])
+        return ruta_interpolada
+    return ruta
 
-#Trayectorias 
+
+def generar_trayectoria_desde_npz(npz_path, n_puntos, escala=ESCALA_NPZ):
+    """Carga la trayectoria del .npz, la centra respecto a su propio centro(pie) y la reescala."""
+    ruta_cruda = cargar_ruta_resultante_npz(npz_path, n_puntos=n_puntos)
+    ruta_centrada = ruta_cruda - np.mean(ruta_cruda, axis=0)
+
+    # Mapeo de ejes (x, z, y) al marco local de la pata
+    x, y, z = ruta_centrada[:, 0], ruta_centrada[:, 1], ruta_centrada[:, 2]
+    puntos_m = escala * np.column_stack([x, z, y])
+    return puntos_m
+
+
 def generar_trayectoria(tipo, n_puntos):
+    FACTOR_ESCALA = 40.0
     if tipo == 'lissajous':
         t = np.linspace(0, 2 * np.pi, n_puntos)
-        x = np.sin(2 * t)
-        y = np.sin(3 * t)
-        z = np.cos(t)
+        x, y, z = np.sin(2 * t), np.sin(3 * t), np.cos(t)
     elif tipo == 'helice':
         t = np.linspace(0, 2 * np.pi, n_puntos)
-        x = np.cos(t)
-        y = np.sin(t)
-        z = np.linspace(0, 1, n_puntos)
+        x, y, z = np.cos(t), np.sin(t), np.linspace(0, 1, n_puntos)
     elif tipo == 'circulo':
         t = np.linspace(0, 2 * np.pi, n_puntos)
-        x = np.cos(t)
-        y = np.sin(t)
-        pendiente_x = 0.5
-        pendiente_y = 0.2
-        z = (pendiente_x * x) + (pendiente_y * y)
+        x, y = np.cos(t), np.sin(t)
+        z = (0.5 * x) + (0.2 * y)
     elif tipo == 'espiral':
         t = np.linspace(0, 4 * np.pi, n_puntos)
         r = np.linspace(0.1, 1, n_puntos)
-        x = r * np.cos(t)
-        y = r * np.sin(t)
-        z = np.linspace(0, 1, n_puntos)
+        x, y, z = r * np.cos(t), r * np.sin(t), np.linspace(0, 1, n_puntos)
     else:
         t = np.linspace(0, 2 * np.pi, n_puntos)
-        x = np.cos(t)
-        y = np.sin(2 * t) / 2
-        z = np.sin(t)
+        x, y, z = np.cos(t), np.sin(2 * t) / 2, np.sin(t)
 
     trayectoria = np.stack([x, y, z], axis=-1) * FACTOR_ESCALA
-    return np.round(trayectoria)
+    return np.round(trayectoria) / 1000.0
 
 
 def espejear(traj):
-    #Espejea la trayectoria del pie sobre el eje lateral local (columna 0). RL = espejo(FR), RR = espejo(FL)
-    #Solo apra pruebas luego lo eliminaré, primero que funcione
     esp = traj.copy()
     esp[:, 0] = -esp[:, 0]
     return esp
@@ -268,14 +287,7 @@ def calcular_rmse(planeada, realizada, n_ref=N_REF_RMSE):
     return rmse, idx
 
 
-
-# Trayectoria de la pata en el mundo: se crea un IndexedLineSet en Webots y se va actualizando en cada paso(por eso son necesarios)
-
 def crear_rastro_webots(robot, def_name, color_rgb, punto_inicial, n_puntos):
-    """Crea en la escena de Webots una linea (IndexedLineSet) con
-    n_puntos+1 vertices, todos inicialmente en punto_inicial, y
-    devuelve el campo 'point' (MFVec3f) para irlos actualizando."""
-    #por eso es cerrada la linea
     x0, y0, z0 = punto_inicial
     puntos_str = " ".join(f"{x0:.4f} {y0:.4f} {z0:.4f}" for _ in range(n_puntos + 1))
     indices_str = " ".join(f"{i} {i + 1} -1" for i in range(n_puntos))
@@ -306,15 +318,11 @@ def actualizar_rastro(point_field, indice, punto_mundo):
 
 
 def pie_a_mundo(self_node, p_pie_local, leg_name):
-    #Convierte la posicion LOCAL del pie (de esa pata) a coordenadas absolutas del mundo, usando la pose actual del cuerpo del robot.
     body_pos = np.array(self_node.getPosition())
     body_rot = np.array(self_node.getOrientation()).reshape(3, 3)
     p_cuerpo = a_marco_cuerpo(p_pie_local, leg_name)
     return body_pos + body_rot @ p_cuerpo
 
-
-
-#Figura de matplotlib: se crea una vez y se actualiza en cada paso
 
 def crear_figura(leg_names, planeadas, neutral):
     plt.ion()
@@ -347,14 +355,14 @@ def crear_figura(leg_names, planeadas, neutral):
     ax.set_xlabel('X - avance [m]')
     ax.set_ylabel('Y - lateral (izq +) [m]')
     ax.set_zlabel('Z - vertical (arriba +) [m]')
-    ax.set_title('Spot: animacion en vivo (wireframe + trayectorias)')
+    ax.set_title('Spot: animacion en vivo (wireframe + trayectorias NPZ)')
     ax.legend(loc='upper left', fontsize=6, ncol=2)
     plt.tight_layout()
     fig.canvas.draw()
     plt.pause(PAUSA_GRAFICO)
     return fig, ax, artistas
 
-#Corregir figura para darle más forma de robot y corregir la trayectoria que aparece en el cuello o cabeza ya ni se
+
 def actualizar_figura(artistas, leg_name, p_hombro, p_rodilla, p_pie, realizada_local_hasta_ahora):
     base_c = a_marco_cuerpo(np.zeros(3), leg_name)
     p_hombro_c = a_marco_cuerpo(p_hombro, leg_name)
@@ -384,13 +392,21 @@ def main():
         left = 'left' in leg_name
         neutral[leg_name] = cinematica_directa(0.0, 0.0, 0.0, left)
 
-    puntos_mm = generar_trayectoria(TIPO_TRAYECTORIA, N_PUNTOS)
-    puntos_m = puntos_mm / 600.0
+    # Carga de trayectoria basada en la selección
+    if TIPO_TRAYECTORIA == 'npz':
+        try:
+            puntos_m = generar_trayectoria_desde_npz(NPZ_PATH, N_PUNTOS, escala=ESCALA_NPZ)
+        except Exception as e:
+            print(f"Error cargando NPZ ({e}). Se usa 'circulo' como respaldo.")
+            puntos_m = generar_trayectoria('circulo', N_PUNTOS)
+    else:
+        puntos_m = generar_trayectoria(TIPO_TRAYECTORIA, N_PUNTOS)
 
+    # Asignación y simetría de trayectorias centradas en cada pata
     traj_FR = puntos_m.copy()
     traj_FL = puntos_m.copy()
-    traj_RL = espejear(traj_FR)   # RL espeja a FR
-    traj_RR = espejear(traj_FL)   # RR espeja a FL
+    traj_RL = espejear(traj_FR)
+    traj_RR = espejear(traj_FL)
 
     planeadas = {
         'front right': traj_FR,
@@ -398,37 +414,32 @@ def main():
         'rear left':   traj_RL,
         'rear right':  traj_RR,
     }
-    realizadas = {leg: [] for leg in spot.leg_names}       # offset (p_pie - neutral), para el RMSE final
-    trazas_absolutas = {leg: [] for leg in spot.leg_names}  # posicion absoluta del pie, para graficar
+    realizadas = {leg: [] for leg in spot.leg_names}
+    trazas_absolutas = {leg: [] for leg in spot.leg_names}
     q_init = {leg: [0.0, 0.0, 0.0] for leg in spot.leg_names}
 
     fig, ax, artistas = crear_figura(spot.leg_names, planeadas, neutral)
 
-    # Dejar rastro dentro de webos
-    robot.step(TIME_STEP)  # asegura que getPosition/getOrientation ya sean validos
+    robot.step(TIME_STEP)
     rastros = {}
     for leg_name in spot.leg_names:
         punto0 = pie_a_mundo(self_node, neutral[leg_name], leg_name)
         def_name = f"RASTRO_{LEG_KEY[leg_name]}"
         rastros[leg_name] = crear_rastro_webots(robot, def_name, COLORES_RGB[leg_name], punto0, N_PUNTOS)
 
-    print("Iniciando controlador")
+    print("Iniciando controlador con datos de .npz")
     terminado = False
     for i in range(N_PUNTOS):
         if terminado:
             break
 
-        objetivos = {}
         for leg_name in spot.leg_names:
             left = 'left' in leg_name
             objetivo = neutral[leg_name] + planeadas[leg_name][i]
             q = cinematica_inversa(objetivo, q_init[leg_name], left)
             q_init[leg_name] = q
-            objetivos[leg_name] = q
             spot.set_leg(leg_name, abduction=q[0], rotation=q[1], elbow=q[2])
 
-        # Asentamiento: varios pasos hasta acercarse al objetivo 
-        # NO CONTROL REAL, UNICAMENTE PASOS PARA LLEGAR AL OBJETIVO REAL
         for _ in range(PASOS_ASENTAMIENTO):
             if robot.step(TIME_STEP) == -1:
                 terminado = True
@@ -440,18 +451,15 @@ def main():
             left = 'left' in leg_name
             valores = spot.legs[leg_name].get_sensor_values()
             angulos_reales = (valores.get('abduction', q_init[leg_name][0]),
-                               valores.get('rotation', q_init[leg_name][1]),
-                               valores.get('elbow', q_init[leg_name][2]))
+                              valores.get('rotation', q_init[leg_name][1]),
+                              valores.get('elbow', q_init[leg_name][2]))
             p_hombro, p_rodilla, p_pie = cinematica_directa(*angulos_reales, left=left,
                                                                   puntos_intermedios=True)
             realizadas[leg_name].append(p_pie - neutral[leg_name])
             trazas_absolutas[leg_name].append(p_pie.copy())
 
-            # actualiza la figura de matplotlib (usa la posicion ABSOLUTA del pie,
-            # igual convencion que la trayectoria planeada: neutral + offset)
             actualizar_figura(artistas, leg_name, p_hombro, p_rodilla, p_pie, trazas_absolutas[leg_name])
 
-            # actualiza el rastro dentro de Webots
             punto_mundo = pie_a_mundo(self_node, p_pie, leg_name)
             actualizar_rastro(rastros[leg_name], i + 1, punto_mundo)
 
@@ -461,7 +469,7 @@ def main():
     for leg_name in realizadas:
         realizadas[leg_name] = np.array(realizadas[leg_name])
 
-    print(f"RMSE (m) usando {N_REF_RMSE} puntos de referencia:") #falta volver a crear la grafica
+    print(f"RMSE (m) usando {N_REF_RMSE} puntos de referencia:")
     idx_ref = None
     for leg_name in spot.leg_names:
         n_calc = min(planeadas[leg_name].shape[0], realizadas[leg_name].shape[0])
@@ -478,7 +486,7 @@ def main():
                        color=COLORES[leg_name], marker='x', s=40)
 
     fig.canvas.draw()
-    plt.savefig('spot_trayectorias.png', dpi=150) #Luego quitar
+    plt.savefig('spot_trayectorias.png', dpi=150)
     plt.ioff()
     plt.show()
 
