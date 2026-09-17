@@ -341,13 +341,17 @@ void setup() {
 
     Serial.println("Conectado!");
 
+    for(int i=0; i<30;i++){    
     // Inicializar Semilla Aleatoria
-    srand(micros());
-    Serial.println("   ALGORITMO GENÉTICO EN ESP32-S3   ");
-
-    for (const auto& tray : TRAYECTORIAS) {
-        ejecutar_ga(tray);
+    srand(esp_random());
+    Serial.print("ALGORITMO GENÉTICO EN ESP32-S3 ");
+    Serial.println(i+1);
+    
+        for (const auto& tray : TRAYECTORIAS) {
+            ejecutar_ga(tray);
+        }
     }
+    Serial.println("TERMINADO");
 }
 
 void loop() {

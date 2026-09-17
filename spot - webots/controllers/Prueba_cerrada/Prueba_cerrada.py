@@ -17,7 +17,7 @@ PASOS_ASENTAMIENTO = 4           # pasos de simulacion extra para que los motore
 
 #  Configuracion para trayectorias leidas desde .npz 
 NPZ_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                         "espiral_p10_g750_pop600_rep0.npz")
+                         "circulo_p10_g750_pop600_rep0.npz")
 ESCALA_NPZ = 1e-4   # factor de escala para convertir la trayectoria leida a metros
 
 
@@ -146,51 +146,113 @@ FEMUR_Y = -0.319729
 FEMUR_Z = 0.182338
 FOOT_OFFSET = np.array([0.001038, -0.271321, -0.225038])
 
-def cinematica_directa(q1, q2, q3, left=True, puntos_intermedios=False):
-    """FK de una pata. q1: abduccion (eje Z). q2: cadera (eje X).
-    q3: rodilla (eje X). Devuelve la posicion del pie en el marco °°°°°LOCAL°°°°°
-    de la pata (antes de montarla al cuerpo)."""
-    s = -1 if left else 1
+# Constantes derivadas para la IK cerrada
+L1 = math.hypot(FEMUR_Y, FEMUR_Z)
+PHI1 = math.atan2(FEMUR_Z, FEMUR_Y)
+L2 = math.hypot(FOOT_OFFSET[1], FOOT_OFFSET[2])
+PHI2 = math.atan2(FOOT_OFFSET[2], FOOT_OFFSET[1])
 
+def cinematica_directa(q1, q2, q3, left=True, puntos_intermedios=False):
+    s = -1.0 if left else 1.0
+    a = s * D1
+    b = D1_Y
+    vx = s * (D3 + FOOT_OFFSET[0])
+    vy = (D2_Y + FEMUR_Y * math.cos(q2) - FEMUR_Z * math.sin(q2)
+          + FOOT_OFFSET[1] * math.cos(q2 + q3)
+          - FOOT_OFFSET[2] * math.sin(q2 + q3))
+    vz = (FEMUR_Y * math.sin(q2) + FEMUR_Z * math.cos(q2)
+          + FOOT_OFFSET[1] * math.sin(q2 + q3)
+          + FOOT_OFFSET[2] * math.cos(q2 + q3))
+
+    px = a + vx * math.cos(q1) - vy * math.sin(q1)
+    py = b + vx * math.sin(q1) + vy * math.cos(q1)
+    pz = vz
+    p_pie = np.array([px, py, pz])
+
+    if not puntos_intermedios:
+        return p_pie
+
+    # Los puntos intermedios se obtienen con la FK matricial solo para
+    # mantener la visualizacion de la pata; la FK del pie sigue siendo cerrada.
     T1 = Tx(s * D1) @ Ty(D1_Y) @ Rz(q1)
     T2 = T1 @ Ty(D2_Y) @ Rx(q2)
     T_rodilla = T2 @ Tx(s * D3) @ Ty(FEMUR_Y) @ Tz(FEMUR_Z)
-    T3 = T_rodilla @ Rx(q3)
-
-    p_forearm = np.array([s * FOOT_OFFSET[0], FOOT_OFFSET[1], FOOT_OFFSET[2], 1.0])
-    p_pie = T3 @ p_forearm
-
-    if not puntos_intermedios:
-        return p_pie[:3]
-
     p_hombro = T1 @ np.array([0.0, 0.0, 0.0, 1.0])
     p_rodilla = T_rodilla @ np.array([0.0, 0.0, 0.0, 1.0])
-    return p_hombro[:3], p_rodilla[:3], p_pie[:3]
+    return p_hombro[:3], p_rodilla[:3], p_pie
 
+
+LIMITS_IK = {
+    'abduction': (-0.6, 0.5),
+    'rotation': (-1.7, 1.7),
+    'elbow': (-0.45, 1.6),
+}
+
+def _candidatas_ik(target, left=True):
+    s = -1.0 if left else 1.0
+    a = s * D1
+    b = D1_Y
+    vx = s * (D3 + FOOT_OFFSET[0])
+    px, py, pz = np.asarray(target, dtype=float)
+
+    r2 = (px - a) ** 2 + (py - b) ** 2
+    disc = r2 - vx ** 2
+    if disc < -1e-9:
+        return []
+    vy_mag = math.sqrt(max(disc, 0.0))
+
+    soluciones = []
+    for vy in (vy_mag, -vy_mag):
+        q1 = math.atan2(py - b, px - a) - math.atan2(vy, vx)
+
+        Zy = vy - D2_Y
+        Zz = pz
+        R2 = Zy ** 2 + Zz ** 2
+        cosang = (R2 - L1 ** 2 - L2 ** 2) / (2 * L1 * L2)
+        if abs(cosang) > 1 + 1e-6:
+            continue
+        cosang = max(-1.0, min(1.0, cosang))
+
+        alpha = math.atan2(Zz, Zy)
+        for signo in (1.0, -1.0):
+            delta = signo * math.acos(cosang)
+
+            # u = q2 + PHI1
+            # v = q2 + q3 + PHI2
+            # delta = v - u
+            # [Zy, Zz] = L1*[cos(u), sin(u)] + L2*[cos(v), sin(v)]
+            beta = math.atan2(L2 * math.sin(delta),
+                              L1 + L2 * math.cos(delta))
+            u = alpha - beta
+            v = u + delta
+
+            q2 = u - PHI1
+            q3 = v - PHI2 - q2
+
+            # Normalizar a [-pi, pi] porque las soluciones angulares son equivalentes modulo 2*pi
+            # esto permite aplicar correctamente los limites articulares de Webots.
+            q1 = (q1 + math.pi) % (2.0 * math.pi) - math.pi
+            q2 = (q2 + math.pi) % (2.0 * math.pi) - math.pi
+            q3 = (q3 + math.pi) % (2.0 * math.pi) - math.pi
+            soluciones.append(np.array([q1, q2, q3]))
+
+    return soluciones
 
 def cinematica_inversa(target_pos, q_init, left=True, max_iter=100, tol=1e-4):
-    q = np.array(q_init, dtype=float)
-    for _ in range(max_iter):
-        p = cinematica_directa(q[0], q[1], q[2], left)
-        error = target_pos - p
-        if np.linalg.norm(error) < tol:
-            break
-        J = np.zeros((3, 3))
-        delta = 1e-6
-        for i in range(3):
-            q_plus = q.copy()
-            q_plus[i] += delta
-            p_plus = cinematica_directa(q_plus[0], q_plus[1], q_plus[2], left)
-            J[:, i] = (p_plus - p) / delta
-        try:
-            dq = np.linalg.solve(J, error)
-        except np.linalg.LinAlgError:
-            dq = np.linalg.pinv(J) @ error
-        q += dq
-        q[0] = np.clip(q[0], -0.6, 0.5)
-        q[1] = np.clip(q[1], -1.7, 1.7)
-        q[2] = np.clip(q[2], -0.45, 1.6)
-    return q
+    candidatas = _candidatas_ik(target_pos, left)
+
+    validas = []
+    for q in candidatas:
+        if (LIMITS_IK['abduction'][0] - 1e-9 <= q[0] <= LIMITS_IK['abduction'][1] + 1e-9 and
+            LIMITS_IK['rotation'][0] - 1e-9 <= q[1] <= LIMITS_IK['rotation'][1] + 1e-9 and
+            LIMITS_IK['elbow'][0] - 1e-9 <= q[2] <= LIMITS_IK['elbow'][1] + 1e-9):
+            validas.append(q)
+
+    if not validas:
+        raise ValueError("Objetivo inalcanzable dentro de los limites articulares")
+
+    q_ref = np.asarray(q_init, dtype=float)
+    return min(validas, key=lambda q: np.linalg.norm(q - q_ref)).copy()
 
 
 # Montaje real de cada pata al cuerpo
@@ -436,7 +498,11 @@ def main():
         for leg_name in spot.leg_names:
             left = 'left' in leg_name
             objetivo = neutral[leg_name] + planeadas[leg_name][i]
-            q = cinematica_inversa(objetivo, q_init[leg_name], left)
+            try:
+                q = cinematica_inversa(objetivo, q_init[leg_name], left)
+            except ValueError as e:
+                print(f"Punto inalcanzable en {LEG_KEY[leg_name]} [{i}]: {e}")
+                q = np.array(q_init[leg_name], dtype=float)
             q_init[leg_name] = q
             spot.set_leg(leg_name, abduction=q[0], rotation=q[1], elbow=q[2])
 

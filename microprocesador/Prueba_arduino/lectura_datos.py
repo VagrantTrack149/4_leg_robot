@@ -48,6 +48,7 @@ fig = plt.figure(figsize=(10, 8))
 ax = fig.add_subplot(111, projection='3d')
 
 ax.scatter(data[:, 0], data[:, 1], data[:, 2], c='red', marker='o', s=50, label='Puntos')
+#ax.plot(path_coords[:, 0], path_coords[:, 1], path_coords[:, 2], c='blue', linestyle='-', linewidth=2, label='Trayectoria')
 ax.plot(path_closed[:, 0], path_closed[:, 1], path_closed[:, 2], c='blue', linestyle='-', linewidth=2, label='Trayectoria')
 
 # Numerar los puntos en orden de recorrido
